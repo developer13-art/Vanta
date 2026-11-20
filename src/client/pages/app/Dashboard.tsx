@@ -27,8 +27,8 @@ function formatSigned(value: number): string {
   return `${value > 0 ? '+' : value < 0 ? '−' : ''}${formatNumber(Math.abs(value))}`;
 }
 
-function formatName(email: string | null): string {
-  const name = (email?.split('@')[0] ?? '').replace(/[._-]+/g, ' ').trim();
+function formatName(fullName: string | null, email: string | null): string {
+  const name = (fullName?.trim() || (email?.split('@')[0] ?? '').replace(/[._-]+/g, ' ')).trim();
   return name
     ? name.replace(/\b\w/g, (letter) => letter.toUpperCase())
     : 'Trader';
@@ -119,8 +119,39 @@ function PerformanceChart({ data, days }: { data: DailyPnl[]; days: number }): J
   );
 }
 
+type MarketFilter = 'forex' | 'metal' | 'index' | 'crypto' | 'more';
+
+function sumBrokerField(accounts: BrokerAccount[], field: 'account_balance' | 'account_equity' | 'account_free_margin' | 'account_used_margin', multipleCurrencies: boolean): string {
+  if (accounts.length === 0) return '—';
+  if (multipleCurrencies) return 'Multiple';
+  const firstAccount = accounts[0];
+  if (!firstAccount) return '—';
+  const currency = firstAccount.account_currency;
+  if (!currency || accounts.some((account) => account.account_currency !== currency || account[field] === null)) return '—';
+  const amounts = accounts.map((account) => Number(account[field]));
+  if (amounts.some((amount) => !Number.isFinite(amount))) return '—';
+  return formatNumber(amounts.reduce((sum, amount) => sum + amount, 0));
+}
+
+function getMarketGroup(category: BrokerSymbol['category']): MarketFilter | 'other' {
+  if (category.startsWith('forex_')) return 'forex';
+  if (category === 'metal') return 'metal';
+  if (category === 'index') return 'index';
+  if (category === 'crypto_cfd') return 'crypto';
+  return 'more';
+}
+
+function marketLabel(category: BrokerSymbol['category']): string {
+  const group = getMarketGroup(category);
+  if (group === 'forex') return 'Forex';
+  if (group === 'metal') return 'Metals';
+  if (group === 'index') return 'Indices';
+  if (group === 'crypto') return 'Crypto';
+  return category === 'energy' ? 'Energy' : 'Other';
+}
+
 function Dashboard(): JSX.Element {
-  const { email } = useAuth();
+  const { email, fullName } = useAuth();
   const [brokers, setBrokers] = useState<BrokerAccount[]>([]);
   const [bots, setBots] = useState<BotSummary[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -129,6 +160,7 @@ function Dashboard(): JSX.Element {
   const [symbols, setSymbols] = useState<BrokerSymbol[]>([]);
   const [dailyPnl, setDailyPnl] = useState<DailyPnl[]>([]);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [marketFilter, setMarketFilter] = useState<MarketFilter>('forex');
   const [days, setDays] = useState(30);
   const [loading, setLoading] = useState(true);
   const [performanceLoading, setPerformanceLoading] = useState(true);
@@ -142,7 +174,7 @@ function Dashboard(): JSX.Element {
       api.listBots(),
       api.listOpenPositions(),
       api.getWallet(),
-      api.listNotifications({ limit: 5 }),
+      api.listNotifications({ unreadOnly: true, limit: 6 }),
       api.listSymbols(),
     ]).then(([brokerResult, botResult, positionResult, walletResult, notificationResult, symbolResult]) => {
       if (!active) return;
@@ -157,8 +189,14 @@ function Dashboard(): JSX.Element {
       else failed = true;
       if (notificationResult.status === 'fulfilled') setNotifications(notificationResult.value);
       else failed = true;
-      if (symbolResult.status === 'fulfilled') setSymbols(symbolResult.value);
-      else failed = true;
+      if (symbolResult.status === 'fulfilled') {
+        setSymbols(symbolResult.value);
+        if (!symbolResult.value.some((symbol) => symbol.category.startsWith('forex_'))) {
+          const firstSymbol = symbolResult.value[0];
+          const firstGroup = firstSymbol ? getMarketGroup(firstSymbol.category) : 'forex';
+          setMarketFilter(firstGroup === 'other' ? 'more' : firstGroup);
+        }
+      } else failed = true;
       setLoadError(failed);
       setLoading(false);
     });
@@ -179,30 +217,47 @@ function Dashboard(): JSX.Element {
     return () => { active = false; };
   }, [days]);
 
-  const name = formatName(email);
+  const name = formatName(fullName, email);
   const runningBots = bots.filter((bot) => bot.state === 'running');
+  const connectedBrokers = brokers.filter((broker) => broker.status === 'connected');
+  const liveBrokers = connectedBrokers.filter((broker) => broker.mode === 'live').length;
+  const demoBrokers = connectedBrokers.length - liveBrokers;
+  const accountCurrencies = [...new Set(connectedBrokers.map((broker) => broker.account_currency).filter((value): value is string => !!value))];
+  const pnlCurrencies = [...new Set(brokers.map((broker) => broker.account_currency).filter((value): value is string => !!value))];
+  const multipleAccountCurrencies = accountCurrencies.length > 1;
+  const multipleCurrencies = pnlCurrencies.length > 1;
+  const pnlCurrencyUnknown = brokers.some((broker) => !broker.account_currency);
+  const pnlCurrencyUnavailable = multipleCurrencies || pnlCurrencyUnknown;
+  const accountBalance = sumBrokerField(connectedBrokers, 'account_balance', multipleAccountCurrencies);
+  const accountEquity = sumBrokerField(connectedBrokers, 'account_equity', multipleAccountCurrencies);
+  const freeMargin = sumBrokerField(connectedBrokers, 'account_free_margin', multipleAccountCurrencies);
+  const usedMargin = sumBrokerField(connectedBrokers, 'account_used_margin', multipleAccountCurrencies);
+  const equityCaption = multipleAccountCurrencies ? 'Mixed currencies · not combined'
+    : accountCurrencies[0] ?? (connectedBrokers.length ? 'Currency unavailable' : 'Connect an account');
   const today = dailyPnl.find((item) => new Date(item.day).toDateString() === new Date().toDateString());
-  const latestNotification = notifications[0];
   const todayPnl = Number(today?.pnl ?? 0);
   const realizedPnl = Number(summary?.pnl.realized ?? 0);
-  const currencies = [...new Set(brokers.map((broker) => broker.account_currency).filter((value): value is string => !!value))];
-  const equityValues = brokers
-    .flatMap((broker) => {
-      const value = broker.account_equity ?? broker.account_balance;
-      return value === null ? [] : [Number(value)];
-    })
-    .filter((value) => Number.isFinite(value));
-  const hasCompleteEquity = brokers.length > 0 && equityValues.length === brokers.length;
-  const accountEquity = currencies.length > 1
-    ? 'Multiple'
-    : hasCompleteEquity
-    ? formatNumber(equityValues.reduce((total, value) => total + value, 0))
+  const wins = Number(summary?.pnl.wins ?? 0);
+  const losses = Number(summary?.pnl.losses ?? 0);
+  const totalTrades = Number(summary?.pnl.total ?? 0);
+  const avgWin = Number(summary?.pnl.avg_win ?? 0);
+  const avgLoss = Math.abs(Number(summary?.pnl.avg_loss ?? 0));
+  const winRate = totalTrades > 0 ? `${Math.round(wins / totalTrades * 100)}%` : '—';
+  const profitFactor = losses > 0 && avgLoss > 0 && !pnlCurrencyUnavailable
+    ? formatNumber((avgWin * wins) / (avgLoss * losses))
     : '—';
-  const equityCaption = currencies.length > 1
-    ? 'Multi-currency'
-    : currencies.length === 1
-      ? currencies[0]
-      : brokers.length > 0 ? 'Balance unavailable' : 'Connect an account';
+  const visibleSymbols = symbols.filter((symbol) => {
+    if (marketFilter === 'more') return getMarketGroup(symbol.category) === 'more';
+    return getMarketGroup(symbol.category) === marketFilter;
+  }).slice(0, 5);
+  const latestNotification = notifications[0];
+  const notificationCount = notifications.length > 5 ? '5+' : String(notifications.length);
+  const pnlUnavailable = performanceError || pnlCurrencyUnavailable;
+  const pnlValue = performanceLoading ? '—'
+    : performanceError ? '—'
+      : multipleCurrencies ? 'Multiple currencies'
+        : pnlCurrencyUnknown ? 'Currency unavailable'
+        : formatSigned(realizedPnl);
 
   if (loading) {
     return <div className="dashboard-loading"><span className="dashboard-spinner" /> Loading your dashboard…</div>;
@@ -210,179 +265,216 @@ function Dashboard(): JSX.Element {
 
   return (
     <div className="dashboard-page">
-      {loadError && (
-        <div className="dashboard-alert" role="status">
-          Some dashboard information could not be loaded. Check your connection and refresh to try again.
-        </div>
-      )}
+      {loadError && <div className="dashboard-alert" role="status">Some dashboard information could not be loaded. Check your connection and refresh to try again.</div>}
+
+      <Link to="/app/settings" className="dashboard-mobile-profile">
+        <span className="dashboard-mobile-avatar">{name.split(/\s+/).slice(0, 2).map((part) => part.slice(0, 1)).join('').toUpperCase()}</span>
+        <span><strong>{name}</strong><small>Trader account</small></span>
+        <Icon name="arrow-right" size={15} />
+      </Link>
 
       <section className="dashboard-hero">
         <div className="dashboard-welcome dashboard-panel">
+          <div className="welcome-robot-art" aria-hidden="true">
+            <svg viewBox="0 0 220 170">
+              <defs>
+                <linearGradient id="robotMetal" x1="0" x2="1" y1="0" y2="1">
+                  <stop offset="0%" stopColor="#f3d37a" />
+                  <stop offset="43%" stopColor="#9b7a39" />
+                  <stop offset="100%" stopColor="#302719" />
+                </linearGradient>
+              </defs>
+              <path className="robot-shoulders" d="M37 163c5-34 25-53 68-56 44 3 65 22 70 56z" />
+              <path className="robot-neck" d="M91 114V94h29v21" />
+              <path className="robot-head" d="M75 41c3-15 14-24 31-24s28 9 31 24l-4 49c-2 17-13 27-27 27S81 107 79 90z" />
+              <path className="robot-face" d="M86 50c2-9 9-14 20-14s18 5 20 14l-2 34c-1 12-8 19-18 19s-17-7-18-19z" />
+              <path className="robot-eye" d="M94 66h8m12 0h8" />
+              <path className="robot-mouth" d="M101 86h12" />
+              <path className="robot-ear" d="M75 57h-8v23h10m60-23h8v23h-10" />
+              <path className="robot-antenna" d="M106 17V8m0 0h13" />
+              <path className="robot-chart" d="M14 125V96m13 29V80m13 45V102m13 23V69m13 56V88" />
+            </svg>
+          </div>
           <div className="welcome-graphic" aria-hidden="true">
-            <svg viewBox="0 0 110 86">
-              <path d="M7 68 28 50l15 9 20-30 15 10 23-26" />
-              <path d="M84 13h17v17" />
-              <path className="welcome-glow" d="M4 78 28 61l16 8 20-30 15 10 25-25" />
+            <svg viewBox="0 0 150 110">
+              <g className="welcome-candles">
+                <path d="M14 83V67m17 18V48m17 37V60m17 25V37m17 48V51m17 34V27m17 58V41" />
+                <path className="welcome-candle-bodies" d="M9 73h10m12-17h10m12 10h10m12-22h10m12 13h10m12-25h10" />
+              </g>
+              <path d="m8 91 29-20 18 10 25-36 20 13 29-38" />
+              <path d="M119 20h12v12" />
             </svg>
           </div>
           <div className="welcome-copy">
             <span className="dashboard-eyebrow">YOUR TRADING OVERVIEW</span>
-            <h1>Welcome back, {name}!</h1>
-            <p>Your AI trading journey is on track.</p>
+            <h1>Welcome back, <em>{name}</em>!</h1>
+            <p>Trade smarter with VANTA Trade AI</p>
+            <div className={`welcome-connection${connectedBrokers.length ? ' is-connected' : ''}`}>
+              <i />{connectedBrokers.length ? `${connectedBrokers.length} connected account${connectedBrokers.length === 1 ? '' : 's'}` : 'Your trading journey starts here'}
+            </div>
+            <Link to="/app/markets" className="gold-button">Explore Markets <Icon name="arrow-right" size={14} /></Link>
           </div>
         </div>
 
-        <div className="dashboard-hero-card credits-card dashboard-panel">
-          <span className="hero-card-icon gold-icon"><Icon name="credits" size={27} /></span>
-          <div className="hero-card-copy">
-            <span>Available Credits</span>
-            <strong>{wallet?.available_credits.toLocaleString() ?? '—'}</strong>
+        <section className="dashboard-account-overview dashboard-panel" aria-label="Account overview">
+          <div className="dashboard-section-heading">
+            <div><h2>Account Overview</h2><p>Broker-reported snapshot</p></div>
+            <Link to="/app/brokers" className="text-link">View details <Icon name="arrow-right" size={13} /></Link>
           </div>
-          <Link to="/app/wallet#buy-credits" className="gold-button">Buy Credits <Icon name="arrow-right" size={14} /></Link>
-        </div>
+          <div className="account-equity-main">
+            <span>Account equity</span>
+            <strong>{accountEquity === '—' ? '—' : `${accountEquity}${multipleAccountCurrencies ? '' : ` ${accountCurrencies[0] ?? ''}`}`}</strong>
+            <small>{equityCaption}</small>
+          </div>
+          <div className="account-overview-values">
+            <div><span>Balance</span><strong>{accountBalance === '—' || multipleAccountCurrencies ? accountBalance : `${accountBalance} ${accountCurrencies[0] ?? ''}`}</strong></div>
+            <div><span>Free margin</span><strong>{freeMargin === '—' || multipleAccountCurrencies ? freeMargin : `${freeMargin} ${accountCurrencies[0] ?? ''}`}</strong></div>
+            <div><span>Used margin</span><strong>{usedMargin === '—' || multipleAccountCurrencies ? usedMargin : `${usedMargin} ${accountCurrencies[0] ?? ''}`}</strong></div>
+          </div>
+          {!connectedBrokers.length && <Link to="/app/brokers/new" className="account-connect-link">Connect an account <Icon name="arrow-right" size={13} /></Link>}
+        </section>
+      </section>
 
-        <div className="dashboard-hero-card performance-card dashboard-panel">
-          <div>
-            <span className="hero-card-label">Realized P/L · {days}D</span>
-            <strong className={realizedPnl >= 0 ? 'positive-value' : 'negative-value'}>
-              {performanceLoading || performanceError || !summary ? '—' : formatSigned(realizedPnl)}
-            </strong>
-          </div>
+      <section className="dashboard-mobile-finance" aria-label="Wallet and performance summary">
+        <article className="mobile-finance-credit">
+          <span className="metric-icon gold-icon"><Icon name="credits" size={23} /></span>
+          <div><span>Available Credits</span><strong>{wallet?.available_credits.toLocaleString() ?? '—'}</strong><small>VANTA credits</small></div>
+          <Link to="/app/wallet#buy-credits" className="gold-button">Buy <Icon name="arrow-right" size={13} /></Link>
+        </article>
+        <article className="mobile-finance-pnl">
+          <div><span>Portfolio P/L · {days}D</span><strong className={!pnlUnavailable && realizedPnl >= 0 ? 'positive-value' : pnlUnavailable ? '' : 'negative-value'}>{pnlValue}</strong></div>
           <div className="performance-bars" aria-hidden="true"><i /><i /><i /><i /><i /></div>
-        </div>
+        </article>
       </section>
 
       <section className="dashboard-metrics" aria-label="Account summary">
-        <div className="metric-card dashboard-panel">
-          <span className="metric-icon blue-icon"><Icon name="bot" size={24} /></span>
+        <article className="dashboard-stat-card dashboard-panel desktop-stat">
+          <span className="metric-icon gold-icon"><Icon name="credits" size={22} /></span>
+          <div><span className="metric-label">Credits Balance</span><strong>{wallet?.available_credits.toLocaleString() ?? '—'}</strong><small>Available to use</small></div>
+          <Link to="/app/wallet#buy-credits" className="metric-action">Buy credits <Icon name="arrow-right" size={12} /></Link>
+        </article>
+        <article className="dashboard-stat-card dashboard-panel desktop-stat">
+          <span className="metric-icon green-icon"><Icon name="bot" size={22} /></span>
+          <div><span className="metric-label">Active Bots</span><strong>{runningBots.length}</strong><small>{bots.length} total · {runningBots.length} running</small></div>
+        </article>
+        <article className="dashboard-stat-card dashboard-panel desktop-stat">
+          <span className="metric-icon blue-icon"><Icon name="broker" size={22} /></span>
+          <div><span className="metric-label">Connected Accounts</span><strong>{connectedBrokers.length}</strong><small>{liveBrokers} live · {demoBrokers} demo</small></div>
+        </article>
+        <article className="dashboard-stat-card dashboard-panel desktop-stat">
+          <span className="metric-icon purple-icon"><Icon name="notifications" size={22} /></span>
+          <div><span className="metric-label">Notifications</span><strong>{notificationCount}</strong><small>Unread alerts</small></div>
+          <Link to="/app/notifications" className="metric-action">View all <Icon name="arrow-right" size={12} /></Link>
+        </article>
+        <article className="dashboard-stat-card dashboard-panel mobile-stat">
+          <span className="metric-icon blue-icon"><Icon name="bot" size={21} /></span>
           <div><span className="metric-label">Active Bots</span><strong>{runningBots.length}<small> / {bots.length}</small></strong></div>
-          <span className="live-dot" aria-label="Live" />
-        </div>
-        <div className="metric-card dashboard-panel">
-          <span className="metric-icon green-icon"><Icon name="positions" size={24} /></span>
+          <i className="live-dot" />
+        </article>
+        <article className="dashboard-stat-card dashboard-panel mobile-stat">
+          <span className="metric-icon green-icon"><Icon name="positions" size={21} /></span>
           <div><span className="metric-label">Open Positions</span><strong>{positions.length}</strong></div>
-        </div>
-        <div className="metric-card dashboard-panel">
-          <span className="metric-icon cyan-icon"><Icon name="wallet" size={24} /></span>
+        </article>
+        <article className="dashboard-stat-card dashboard-panel mobile-stat">
+          <span className="metric-icon cyan-icon"><Icon name="wallet" size={21} /></span>
           <div><span className="metric-label">Account Equity</span><strong>{accountEquity}</strong><small>{equityCaption}</small></div>
-        </div>
-        <div className="metric-card dashboard-panel">
-          <span className="metric-icon gold-icon"><Icon name="performance" size={24} /></span>
-          <div><span className="metric-label">Today’s Realized P/L</span><strong className={todayPnl >= 0 ? 'positive-value' : 'negative-value'}>{formatSigned(todayPnl)}</strong></div>
-        </div>
+        </article>
+        <article className="dashboard-stat-card dashboard-panel mobile-stat">
+          <span className="metric-icon gold-icon"><Icon name="performance" size={21} /></span>
+          <div><span className="metric-label">Today’s Realized P/L</span><strong className={!pnlCurrencyUnavailable && todayPnl >= 0 ? 'positive-value' : pnlCurrencyUnavailable ? '' : 'negative-value'}>{performanceLoading || performanceError || pnlCurrencyUnavailable ? '—' : formatSigned(todayPnl)}</strong></div>
+        </article>
       </section>
 
       <section className="dashboard-main-grid">
-        <div className="dashboard-panel dashboard-section portfolio-panel">
+        <div className="dashboard-panel dashboard-section market-panel">
           <div className="dashboard-section-heading">
-            <div><h2>Portfolio Performance</h2><p>Realized profit and loss over time</p></div>
-            <div className="chart-periods" aria-label="Performance period">
-              {periods.map((period) => (
-                <button
-                  type="button"
-                  key={period.days}
-                  className={days === period.days ? 'selected' : ''}
-                  aria-pressed={days === period.days}
-                  onClick={() => setDays(period.days)}
-                >
-                  {period.label}
-                </button>
+            <div><h2>Market Overview</h2><p>Instruments discovered from your broker</p></div>
+            <Link to="/app/markets" className="text-link">View all <Icon name="arrow-right" size={13} /></Link>
+          </div>
+          <div className="market-tabs" role="group" aria-label="Instrument category">
+            {([
+              ['forex', 'Forex'], ['metal', 'Metals'], ['index', 'Indices'],
+              ['crypto', 'Crypto'], ['more', 'More'],
+            ] as Array<[MarketFilter, string]>).map(([value, label]) => (
+              <button type="button" aria-pressed={marketFilter === value} className={marketFilter === value ? 'selected' : ''} key={value} onClick={() => setMarketFilter(value)}>{label}</button>
+            ))}
+          </div>
+          {symbols.length === 0 ? (
+            <div className="dashboard-empty">
+              <span className="metric-icon gold-icon"><Icon name="markets" size={20} /></span>
+              <p>No instruments discovered yet. Connect a broker and discover symbols to see them here.</p>
+              <Link to="/app/brokers/new">Connect a broker <Icon name="arrow-right" size={13} /></Link>
+            </div>
+          ) : visibleSymbols.length === 0 ? (
+            <div className="market-filter-empty">No instruments in this category.</div>
+          ) : (
+            <div className="market-list">
+              {visibleSymbols.map((symbol, index) => (
+                <Link to={`/app/markets?search=${encodeURIComponent(symbol.canonical_symbol)}`} className="market-row" key={symbol.id}>
+                  <span className={`market-symbol-icon market-symbol-${index % 4}`}>{symbol.canonical_symbol.slice(0, 1)}</span>
+                  <span className="market-symbol-copy">
+                    <strong>{symbol.canonical_symbol}</strong>
+                    <small>{symbol.description || symbol.broker_symbol}</small>
+                  </span>
+                  <span className="market-row-state"><small>{marketLabel(symbol.category)}</small>{symbol.is_tradable ? 'Available' : 'Not tradable'}</span>
+                </Link>
               ))}
             </div>
+          )}
+          <p className="market-data-note">Instrument list only · live quotes are not shown on this overview.</p>
+        </div>
+
+        <div className="dashboard-panel dashboard-section portfolio-panel">
+          <div className="dashboard-section-heading">
+            <div><h2>Performance Overview</h2><p>Realized P/L over the selected period</p></div>
+            <div className="chart-periods" aria-label="Performance period">
+              {periods.map((period) => (
+                <button type="button" key={period.days} className={days === period.days ? 'selected' : ''} aria-pressed={days === period.days} onClick={() => setDays(period.days)}>{period.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="performance-overview-total">
+            <div><span>Net realized P/L</span><strong className={!pnlUnavailable && realizedPnl >= 0 ? 'positive-value' : pnlUnavailable ? '' : 'negative-value'}>{pnlValue}</strong></div>
+            <span className="performance-currency">{multipleCurrencies ? 'Multiple currencies' : pnlCurrencyUnknown ? 'Currency unavailable' : pnlCurrencies[0] ?? 'Account currency'}</span>
           </div>
           {performanceLoading ? (
             <div className="chart-loading">Updating performance…</div>
           ) : performanceError ? (
             <div className="chart-empty" role="status">Performance data is temporarily unavailable.</div>
+          ) : pnlCurrencyUnavailable ? (
+            <div className="chart-empty" role="status">P/L is not shown when account currencies are mixed or unavailable.</div>
           ) : (
             <PerformanceChart data={dailyPnl} days={days} />
           )}
+          <div className="performance-summary">
+            <div><span>Closed trades</span><strong>{performanceLoading || performanceError ? '—' : totalTrades.toLocaleString()}</strong></div>
+            <div><span>Win rate</span><strong>{performanceLoading || performanceError ? '—' : winRate}</strong></div>
+            <div><span>Profit factor</span><strong>{performanceLoading || performanceError ? '—' : profitFactor}</strong></div>
+          </div>
         </div>
 
-        <div className="dashboard-panel dashboard-section market-panel">
-          <div className="dashboard-section-heading">
-            <div><h2>Market Overview</h2><p>Your connected instruments</p></div>
-            <Link to="/app/markets" className="text-link">View all <Icon name="arrow-right" size={14} /></Link>
+        <div className="dashboard-panel dashboard-section actions-panel">
+          <div className="dashboard-section-heading"><div><h2>Quick Actions</h2><p>Common tasks</p></div></div>
+          <div className="dashboard-actions">
+            <Link to="/app/bots/new" className="dashboard-action-primary"><Icon name="bot" size={17} /><span>Create AI Bot</span><Icon name="arrow-right" size={14} /></Link>
+            <Link to="/app/brokers/new"><Icon name="broker" size={17} /><span>Connect Broker</span><Icon name="arrow-right" size={14} /></Link>
+            <Link to="/app/wallet#buy-credits" className="dashboard-action-buy"><Icon name="credits" size={17} /><span>Buy Credits</span><Icon name="arrow-right" size={14} /></Link>
+            <Link to="/app/performance" className="dashboard-action-report"><Icon name="analytics" size={17} /><span>View Reports</span><Icon name="arrow-right" size={14} /></Link>
           </div>
-          {symbols.length === 0 ? (
-            <div className="dashboard-empty">
-              <span className="metric-icon gold-icon"><Icon name="markets" size={20} /></span>
-              <p>No markets yet. Connect a broker and discover symbols to see your instruments here.</p>
-              <Link to="/app/brokers/new">Connect a broker <Icon name="arrow-right" size={13} /></Link>
-            </div>
-          ) : (
-            <div className="market-list">
-              {symbols.slice(0, 4).map((symbol, index) => (
-                <Link to="/app/markets" className="market-row" key={symbol.id}>
-                  <span className={`market-symbol-icon market-symbol-${index % 4}`}>{symbol.canonical_symbol.slice(0, 1)}</span>
-                  <span className="market-symbol-copy">
-                    <strong>{symbol.canonical_symbol}</strong>
-                    <small>{symbol.description || symbol.category.replace(/_/g, ' ')}</small>
-                  </span>
-                  <span className="market-category">{symbol.category.replace(/_/g, ' ')}</span>
-                </Link>
-              ))}
-            </div>
-          )}
         </div>
       </section>
 
       <section className="dashboard-bottom-grid">
-        <div className="dashboard-panel dashboard-section bots-panel">
-          <div className="dashboard-section-heading">
-            <div><h2>Your Bots</h2><p>{runningBots.length} running · {bots.length} total</p></div>
-            <Link to="/app/bots" className="text-link">View all <Icon name="arrow-right" size={14} /></Link>
+        <article className="dashboard-trust-card">
+          <span className="dashboard-trust-icon"><Icon name="shield" size={20} /></span>
+          <div><strong>Your account stays in your control</strong><p>Your trading capital remains at your broker. VANTA does not request withdrawal permission.</p></div>
+        </article>
+        <article className="dashboard-tip-card">
+          <span className="dashboard-trust-icon"><Icon name="help" size={19} /></span>
+          <div><strong>Pro tip</strong><p>{connectedBrokers.length === 0 ? 'Connect a demo account to discover instruments and set up your workspace.' : 'Review your bot settings and risk limits before starting a strategy.'}</p>
+            <Link to={connectedBrokers.length === 0 ? '/app/brokers/new' : '/app/bots'}>{connectedBrokers.length === 0 ? 'Connect now' : 'Review bots'} <Icon name="arrow-right" size={13} /></Link>
           </div>
-          {bots.length === 0 ? (
-            <div className="dashboard-empty compact-empty">
-              <p>You haven’t created a bot yet.</p>
-              <Link to="/app/bots/new">Create your first bot <Icon name="arrow-right" size={13} /></Link>
-            </div>
-          ) : (
-            <div className="bot-list">
-              {bots.slice(0, 3).map((bot) => (
-                <Link to={`/app/bots/${bot.id}`} className="bot-row" key={bot.id}>
-                  <span className={`bot-avatar${bot.state === 'running' ? ' bot-avatar-active' : ''}`}><Icon name="bot" size={22} /></span>
-                  <span className="bot-info">
-                    <strong>{bot.name}</strong>
-                    <small>{bot.strategy_name} <i /> {bot.open_positions} open</small>
-                  </span>
-                  <span className={`bot-state${bot.state === 'running' ? ' bot-state-active' : ''}`}>
-                    {bot.state.replace(/_/g, ' ')}
-                  </span>
-                  <Icon name="arrow-right" size={16} className="bot-row-arrow" />
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="dashboard-panel dashboard-section actions-panel">
-          <div className="dashboard-section-heading"><div><h2>Quick Actions</h2><p>Jump back into your workflow</p></div></div>
-          <div className="dashboard-actions">
-            <Link to="/app/bots/new"><Icon name="plus" size={17} /><span>Create New Bot</span><Icon name="arrow-right" size={14} /></Link>
-            <Link to="/app/wallet#buy-credits"><Icon name="credits" size={17} /><span>Buy Credits</span><Icon name="arrow-right" size={14} /></Link>
-            <Link to="/app/performance"><Icon name="analytics" size={17} /><span>View Analytics</span><Icon name="arrow-right" size={14} /></Link>
-            <Link to="/app/brokers"><Icon name="settings" size={17} /><span>Manage Accounts</span><Icon name="arrow-right" size={14} /></Link>
-          </div>
-        </div>
-
-        <div className="dashboard-upgrade">
-          <svg className="upgrade-art" viewBox="0 0 320 150" aria-hidden="true">
-            <g className="candle-sticks">
-              <path d="M18 106V67m17 48V51m17 58V72m17 35V41m17 44V31m17 53V47m17 26V24m17 48V35m17 38V19m17 47V27" />
-              <path className="down-candles" d="M48 72v20m34-37v22m51-32v21m51-23v24" />
-            </g>
-            <path className="upgrade-bull" d="M219 105c-15-1-24-9-27-23l-15-8 7-7 17 2 7-13-7-13 9-11 13 8 14-1 13-9 13 8 16-2 9 9-10 12-1 17-11 8-4 14-16 8-2 12-15 2-6-10zm-18-28-13-1 8 8m62-35 15-10-4 17m-40 68v-13" />
-            <path className="upgrade-spark" d="M181 37 215 14m-27 40 22-24m16 93 42-31" />
-          </svg>
-          <div className="upgrade-copy">
-            <span className="dashboard-eyebrow">LEVEL UP YOUR STRATEGY</span>
-            <h2>Unlock more potential</h2>
-            <p>Explore your tools and build your next trading strategy.</p>
-            <Link to="/app/bots/new" className="gold-button">Create a trading bot <Icon name="arrow-right" size={14} /></Link>
-          </div>
-        </div>
+        </article>
       </section>
 
       {latestNotification && (

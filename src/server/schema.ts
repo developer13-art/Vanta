@@ -36,6 +36,7 @@ export const connectBrokerSchema = z.object({
   login: z.string().min(1).max(64),
   password: z.string().min(1).max(256),
   mode: z.enum(['demo', 'live']),
+  platform: z.enum(['mt4', 'mt5']).optional(),
 });
 
 export const createBotSchema = z.object({
@@ -66,6 +67,10 @@ export const closeAllSchema = z.object({
 
 export const purchaseSchema = z.object({
   packageCode: z.enum(['starter', 'basic', 'trader', 'pro', 'advanced', 'expert', 'elite']),
+});
+
+export const verifyPaymentSchema = z.object({
+  reference: z.string().min(1).max(128),
 });
 
 export const notificationListSchema = z.object({

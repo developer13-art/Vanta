@@ -3,8 +3,8 @@ import { query } from '../db';
 import { requireAuth, validateBody } from '../middleware';
 import { getWallet, listLedger } from '../ledger';
 import { PACKAGES } from '../credit-rates';
-import { purchaseSchema } from '../schema';
-import { initPayment } from '../paystack';
+import { purchaseSchema, verifyPaymentSchema } from '../schema';
+import { initPayment, verifyPaymentForUser } from '../paystack';
 import { Errors } from '../errors';
 
 export const walletRouter = Router();
@@ -46,6 +46,14 @@ walletRouter.post('/purchase', requireAuth, validateBody(purchaseSchema), async 
       email: userRes.rows[0].email,
       packageCode,
     });
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+walletRouter.post('/verify-payment', requireAuth, validateBody(verifyPaymentSchema), async (req, res, next) => {
+  try {
+    const { reference } = req.body as typeof verifyPaymentSchema._type;
+    const result = await verifyPaymentForUser(reference, req.userId!);
     res.json(result);
   } catch (err) { next(err); }
 });

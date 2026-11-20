@@ -60,10 +60,10 @@ authRouter.post('/login', authRateLimit, validateBody(loginSchema), async (req, 
   try {
     const { email, password } = req.body as typeof loginSchema._type;
     const userRes = await query<{
-      id: string; password_hash: string; email_verified_at: string | null;
+      id: string; full_name: string; password_hash: string; email_verified_at: string | null;
       mfa_enabled: boolean; status: string;
     }>(
-      `SELECT id, password_hash, email_verified_at, mfa_enabled, status FROM users WHERE email = $1`,
+      `SELECT id, full_name, password_hash, email_verified_at, mfa_enabled, status FROM users WHERE email = $1`,
       [email],
     );
     const user = userRes.rows[0];
@@ -108,7 +108,7 @@ authRouter.post('/login', authRateLimit, validateBody(loginSchema), async (req, 
     res.json({
       accessToken,
       refreshToken,
-      user: { id: user.id, emailVerified: !!user.email_verified_at, roles },
+      user: { id: user.id, fullName: user.full_name, emailVerified: !!user.email_verified_at, roles },
     });
   } catch (err) { next(err); }
 });

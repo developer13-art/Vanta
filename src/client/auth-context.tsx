@@ -4,6 +4,7 @@ import { api, tokens, ApiRequestError } from './api';
 interface AuthState {
   userId: string | null;
   email: string | null;
+  fullName: string | null;
   emailVerified: boolean;
   roles: string[];
   loading: boolean;
@@ -23,19 +24,22 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 function decodeJwtRoles(token: string): string[] {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return Array.isArray(payload.roles) ? payload.roles : [];
+    const payloadSegment = token.split('.')[1];
+    if (!payloadSegment) return [];
+    const payload: unknown = JSON.parse(atob(payloadSegment));
+    if (typeof payload !== 'object' || payload === null || !('roles' in payload) || !Array.isArray(payload.roles)) return [];
+    return payload.roles.filter((role): role is string => typeof role === 'string');
   } catch { return []; }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }): JSX.Element {
   const [state, setState] = useState<AuthState>({
-    userId: null, email: null, emailVerified: false, roles: [], loading: true, error: null,
+    userId: null, email: null, fullName: null, emailVerified: false, roles: [], loading: true, error: null,
   });
 
   const refreshMe = useCallback(async () => {
     if (!tokens.access) {
-      setState({ userId: null, email: null, emailVerified: false, roles: [], loading: false, error: null });
+      setState({ userId: null, email: null, fullName: null, emailVerified: false, roles: [], loading: false, error: null });
       return;
     }
     try {
@@ -43,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): JSX.E
       setState({
         userId: me.id,
         email: me.email,
+        fullName: me.full_name,
         emailVerified: !!me.email_verified_at,
         roles: decodeJwtRoles(tokens.access!),
         loading: false,
@@ -50,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): JSX.E
       });
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 401) tokens.clear();
-      setState({ userId: null, email: null, emailVerified: false, roles: [], loading: false, error: null });
+      setState({ userId: null, email: null, fullName: null, emailVerified: false, roles: [], loading: false, error: null });
     }
   }, []);
 
@@ -64,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): JSX.E
       setState({
         userId: res.user.id,
         email,
+        fullName: res.user.fullName,
         emailVerified: res.user.emailVerified,
         roles: res.user.roles,
         loading: false,
@@ -84,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): JSX.E
       setState({
         userId: res.userId,
         email: body.email,
+        fullName: body.fullName,
         emailVerified: false,
         roles: [],
         loading: false,
@@ -98,7 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): JSX.E
 
   const logout = useCallback(async () => {
     await api.logout();
-    setState({ userId: null, email: null, emailVerified: false, roles: [], loading: false, error: null });
+    setState({ userId: null, email: null, fullName: null, emailVerified: false, roles: [], loading: false, error: null });
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({

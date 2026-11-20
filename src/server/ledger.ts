@@ -83,8 +83,12 @@ async function applyWithClient(client: PoolClient, args: LedgerArgs): Promise<nu
   return newAvailable;
 }
 
+export function applyLedgerInTransaction(client: PoolClient, args: LedgerArgs): Promise<number> {
+  return applyWithClient(client, args);
+}
+
 export async function applyLedger(args: LedgerArgs): Promise<number> {
-  return withTransaction((client) => applyWithClient(client, args));
+  return withTransaction((client) => applyLedgerInTransaction(client, args));
 }
 
 export async function getWallet(userId: string) {

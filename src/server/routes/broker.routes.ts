@@ -24,6 +24,16 @@ function canonicalize(symbol: string): { canonical: string; category: string } {
   return { canonical: s, category: categories[s] ?? 'other' };
 }
 
+function metaApiErrorFields(error: unknown): { name: string; status?: number; code?: string } {
+  if (typeof error !== 'object' || error === null) return { name: 'UnknownError' };
+  const providerError = error as { name?: unknown; status?: unknown; code?: unknown };
+  return {
+    name: typeof providerError.name === 'string' ? providerError.name : 'ProviderError',
+    ...(typeof providerError.status === 'number' ? { status: providerError.status } : {}),
+    ...(typeof providerError.code === 'string' ? { code: providerError.code } : {}),
+  };
+}
+
 brokerRouter.get('/', requireAuth, async (req, res, next) => {
   try {
     const rows = await query(
@@ -47,7 +57,7 @@ brokerRouter.get('/', requireAuth, async (req, res, next) => {
 
 brokerRouter.post('/', requireAuth, validateBody(connectBrokerSchema), async (req, res, next) => {
   try {
-    const { label, brokerName, server, login, password, mode } = req.body as typeof connectBrokerSchema._type;
+    const { label, brokerName, server, login, password, mode, platform } = req.body as typeof connectBrokerSchema._type;
 
     const identityHash = sha256Hex(`${brokerName}:${server}:${login}`);
     const dupe = await query(`SELECT id FROM broker_accounts WHERE user_id=$1 AND identity_hash=$2`, [req.userId, identityHash]);
@@ -58,10 +68,20 @@ brokerRouter.post('/', requireAuth, validateBody(connectBrokerSchema), async (re
       metaapiId = await provisionAccount({
         login, password, server,
         name: label,
-        platform: /^mt4/i.test(server) ? 'mt4' : 'mt5',
+        platform: platform ?? (/^mt4/i.test(server) ? 'mt4' : 'mt5'),
       });
     } catch (err) {
-      logger.warn({ err }, 'MetaApi provisioning failed');
+      const providerError = metaApiErrorFields(err);
+      logger.warn(providerError, 'MetaApi provisioning failed');
+      if (providerError.status === 400) {
+        throw Errors.badRequest('MetaApi rejected the broker details. Check the selected platform, account login, trading password, and exact broker server name.');
+      }
+      if (providerError.status === 401) {
+        throw Errors.unavailable('MetaApi rejected the access token. Verify METAAPI_TOKEN and restart the API server.');
+      }
+      if (providerError.status === 403) {
+        throw Errors.unavailable('MetaApi denied account creation. Check your MetaApi account permissions, plan, and provisioning limits.');
+      }
       throw Errors.unavailable('Broker provisioning failed. Check credentials and try again.');
     }
 

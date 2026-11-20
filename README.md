@@ -24,6 +24,14 @@ Cloud-hosted autonomous AI trading platform for users' own MT4/MT5 broker accoun
 
 The server runs on `http://localhost:4000`, the client on `http://localhost:5173` with proxy.
 
+## First Admin Account
+
+1. Sign up using the account you want to administer the app, then verify its email.
+2. With the database configured, run `npm run admin:bootstrap -- admin@example.com`, replacing the email with that account's address.
+3. Log out and back in, then open `/admin/overview`.
+
+This command only grants the first admin role and refuses to run if an admin already exists. It does not create shared default credentials; use the password you chose during signup.
+
 ## Key Design Notes
 
 - **Broker credentials** are encrypted with AES-256-GCM at rest and never exposed to the browser, logs, or admin views.
@@ -39,5 +47,5 @@ The server runs on `http://localhost:4000`, the client on `http://localhost:5173
 
 ## Deployment
 
-- Build: `npm run build`
-- Run: `npm start` (serves the API; serve `dist/client` via a static host or Express static middleware — see docs)
+- Build: `npm run build` (outputs the API bundle to `dist/server` and the frontend to `dist/client`)
+- Run: `npm start` (runs the API; publish `dist/client` separately with a static host)

@@ -57,7 +57,7 @@ export interface AuthUser {
 export interface LoginResponse {
   accessToken: string;
   refreshToken: string;
-  user: { id: string; emailVerified: boolean; roles: string[] };
+  user: { id: string; fullName: string; emailVerified: boolean; roles: string[] };
 }
 
 export interface BrokerAccount {

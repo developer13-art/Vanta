@@ -1,34 +1,42 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Icon } from '../../components/Icon';
 
 const ITEMS = [
-  ['Do I need to keep my PC running?', 'No. VANTA runs in the cloud and connects to your broker through MetaApi — you do not need any local terminal.'],
-  ['Which brokers are supported?', 'Any broker that offers MT4 or MT5 and supports MetaApi connectivity. Your available instruments are discovered from your account.'],
-  ['Can I test without risking money?', 'Yes. Demo accounts are fully supported and recommended first. Live trading requires a separate authorization step.'],
-  ['How are credits charged?', '2 credits per individual order open, 2 per individual close, 2 per AI assessment. Rejected orders and internal retries are free.'],
-  ['What happens when my wallet hits zero?', 'New billable entries and discretionary AI are blocked. Existing positions stay in management-only safety mode. Emergency actions remain free.'],
-  ['Can the AI place trades on its own?', 'The AI produces bounded decisions. Every proposal is verified by an independent risk engine before submission. AI cannot override limits.'],
-  ['Do you take custody of funds?', 'No. Your capital stays in your own broker account. The platform never requests withdrawal permission.'],
-  ['Are profits guaranteed?', 'No. Trading involves substantial risk. Past performance does not guarantee future results.'],
+  ['Do I need to keep my PC running?', 'No. VANTA runs in the cloud and connects to your broker through MetaApi — you do not need a local trading terminal.'],
+  ['Which brokers are supported?', 'MT4 and MT5 accounts that support MetaApi connectivity. Available instruments are discovered from your connected account.'],
+  ['Can I test without risking money?', 'Demo accounts are supported and recommended for getting started. Live trading uses real funds and carries financial risk.'],
+  ['How are credits charged?', 'The current published rates are charged per confirmed order open, order close, and AI assessment. Rejected orders and internal retries are not billed.'],
+  ['What happens when my wallet hits zero?', 'New billable entries and discretionary AI are blocked. Existing positions stay in management-only safety mode, and emergency actions remain free.'],
+  ['Can the AI place trades on its own?', 'AI produces bounded decisions; an independent risk engine verifies proposals before submission. AI cannot override configured risk limits.'],
+  ['Do you take custody of funds?', 'No. Your capital remains in your own broker account. The platform does not request withdrawal permission.'],
+  ['Are profits guaranteed?', 'No. Trading involves substantial risk, and past performance does not guarantee future results.'],
 ];
 
 export function Faq(): JSX.Element {
   const [open, setOpen] = useState<number | null>(0);
   return (
-    <div className="public-section">
-      <h2>Frequently Asked Questions</h2>
-      <div style={{ marginTop: 24 }}>
-        {ITEMS.map(([q, a], i) => (
-          <div key={i} style={{ borderBottom: '1px solid var(--border)', padding: '16px 0' }}>
-            <button
-              onClick={() => setOpen(open === i ? null : i)}
-              style={{ background: 'none', border: 'none', color: 'var(--text)', width: '100%', textAlign: 'left', fontWeight: 600, fontSize: 15 }}
-            >
-              {open === i ? '−' : '+'} {q}
-            </button>
-            {open === i && <p style={{ marginTop: 12 }}>{a}</p>}
-          </div>
-        ))}
-      </div>
+    <div className="public-section faq-page">
+      <header className="public-page-heading">
+        <span className="public-page-eyebrow">HELP CENTER</span>
+        <h1>Frequently asked questions</h1>
+        <p>Answers about connections, credit usage, and how VANTA keeps you in control.</p>
+      </header>
+      <section className="faq-list" aria-label="Frequently asked questions">
+        {ITEMS.map(([question, answer], index) => {
+          const isOpen = open === index;
+          const panelId = `faq-answer-${index}`;
+          return (
+            <article key={question} className={`faq-item${isOpen ? ' is-open' : ''}`}>
+              <button type="button" aria-expanded={isOpen} aria-controls={panelId} onClick={() => setOpen(isOpen ? null : index)}>
+                <span><i>{String(index + 1).padStart(2, '0')}</i>{question}</span><b aria-hidden="true">{isOpen ? '−' : '+'}</b>
+              </button>
+              {isOpen && <p id={panelId}>{answer}</p>}
+            </article>
+          );
+        })}
+      </section>
+      <div className="faq-contact-note"><span>Still have a question?</span><Link to="/contact">Contact support <Icon name="arrow-right" size={14} /></Link></div>
     </div>
   );
 }

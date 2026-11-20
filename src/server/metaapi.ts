@@ -31,10 +31,11 @@ export async function provisionAccount(req: ProvisionRequest): Promise<string> {
     name: req.name,
     server: req.server,
     platform: req.platform,
-    type: 'cloud',
+    type: 'cloud-g2',
     magic: 0,
     reliability: 'regular',
   });
+  await account.deploy();
   return account.id;
 }
 

@@ -151,7 +151,7 @@ export const api = {
   getBroker: (id: string) => request<BrokerAccount>(`/api/brokers/${id}`),
   createBroker: (body: {
     label: string; brokerName: string; server: string; login: string;
-    password: string; mode: 'demo' | 'live';
+    password: string; mode: 'demo' | 'live'; platform?: 'mt4' | 'mt5';
   }) => request<{ id: string; status: string }>('/api/brokers', { method: 'POST', body }),
   brokerSymbols: (id: string) => request<BrokerSymbol[]>(`/api/brokers/${id}/symbols`),
   discoverSymbols: (id: string) =>
@@ -209,8 +209,16 @@ export const api = {
   getLedger: (limit = 100, offset = 0) =>
     request<LedgerEntry[]>(`/api/wallet/ledger?limit=${limit}&offset=${offset}`),
   listPackages: () => request<CreditPackage[]>('/api/wallet/packages'),
+  publicRates: () => request<{ openOrder: number; closeOrder: number; aiAssessment: number }>('/api/public/rates', { auth: false }),
   purchase: (packageCode: PackageCode) =>
     request<{ authorizationUrl: string; reference: string }>('/api/wallet/purchase', { method: 'POST', body: { packageCode } }),
+  verifyPayment: (reference: string) =>
+    request<
+      | { status: 'successful'; creditsGranted: number }
+      | { status: 'pending' | 'failed' }
+    >(
+      '/api/wallet/verify-payment', { method: 'POST', body: { reference } },
+    ),
   listPayments: () => request<Array<{
     id: string; provider: string; provider_reference: string; package_code: string;
     credits_granted: number; amount: string; currency: string; status: string;
