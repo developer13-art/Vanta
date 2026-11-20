@@ -48,4 +48,4 @@ This command only grants the first admin role and refuses to run if an admin alr
 ## Deployment
 
 - Build: `npm run build` (outputs the API bundle to `dist/server` and the frontend to `dist/client`)
-- Run: `npm start` (runs the API; publish `dist/client` separately with a static host)
+- Run: `npm start` (serves the API and built frontend from the same origin)

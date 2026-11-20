@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import { extname, resolve } from 'node:path';
 import { env } from './env';
 import { requestId, errorHandler, notFoundHandler, generalRateLimit } from './middleware';
 import { logger } from './logger';
@@ -21,9 +22,6 @@ import { healthCheck } from './db';
 import { positionRouter } from './routes/position.routes';
 import { historyRouter } from './routes/history.routes';
 import { publicRouter } from './routes/public.routes';
-
-// inside buildApp(), after existing mounts:
-
 
 export function buildApp(): express.Express {
   const app = express();
@@ -54,13 +52,24 @@ export function buildApp(): express.Express {
   app.use('/api/market', marketRouter);
   app.use('/api/analytics', analyticsRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/positions', positionRouter);
+  app.use('/api/history', historyRouter);
+  app.use('/api/public', publicRouter);
+
+  if (env.NODE_ENV === 'production') {
+    const clientDist = resolve(process.cwd(), 'dist/client');
+    app.use(express.static(clientDist, { index: false }));
+    app.get('*', (req, res, next) => {
+      if (req.path === '/api' || req.path.startsWith('/api/') || extname(req.path)) return next();
+      res.sendFile(resolve(clientDist, 'index.html'), (err) => {
+        if (err) next(err);
+      });
+    });
+  }
 
   app.use(notFoundHandler);
   app.use(errorHandler);
 
-  app.use('/api/positions', positionRouter);
-  app.use('/api/history', historyRouter);
-  app.use('/api/public', publicRouter);
   logger.info('Express app built');
   return app;
 }
