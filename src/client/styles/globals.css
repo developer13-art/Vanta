@@ -20,8 +20,15 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
+}
+:is(.public-site, .app-shell, .layout, .auth-page) :is(p, a, button, input, select, textarea, label, small, th, td, li, span):not(.home-device *) {
+  font-size: max(14px, .875em) !important;
+}
+.public-site .home-feature-card h3,
+.public-site .home-process-steps h3 {
+  font-size: 14px;
 }
 a { color: var(--primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
