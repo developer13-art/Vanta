@@ -240,6 +240,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   transition: color .15s ease, background .15s ease;
 }
 .app-nav-link:hover { background: #131a23; color: #fff; text-decoration: none; }
+.app-nav-logout { width: 100%; border: 0; background: transparent; text-align: left; }
 .app-nav-link.active {
   background: linear-gradient(90deg, rgba(246, 187, 52, .23), rgba(246, 187, 52, .06));
   box-shadow: inset 3px 0 0 var(--app-gold);

@@ -119,6 +119,19 @@ export function AppLayout(): JSX.Element {
                   <span>{item.label}</span>
                 </NavLink>
               ))}
+              {group === 'Manage' && (
+                <button
+                  type="button"
+                  className="app-nav-link app-nav-logout"
+                  onClick={() => {
+                    closeMobileMenu();
+                    void signOut();
+                  }}
+                >
+                  <Icon name="logout" size={17} />
+                  <span>Sign out</span>
+                </button>
+              )}
             </div>
           ))}
           {isAdmin && (
