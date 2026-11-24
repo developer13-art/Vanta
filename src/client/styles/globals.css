@@ -1734,6 +1734,16 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .wallet-section-heading p { margin: 0; color: #8794a2; font-size: 9px; }
 .wallet-payment-note { display: inline-flex; align-items: center; gap: 6px; color: #9aa8b5; font-size: 8px; }
 .wallet-payment-note svg, .wallet-rate-note svg { flex: 0 0 auto; color: #35c99c; }
+.wallet-checkout-options { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; margin: 0 0 15px; }
+.wallet-currency-picker { display: flex; min-width: 150px; flex-direction: column; gap: 6px; color: #aab6c2; font-size: 10px; }
+.wallet-currency-picker select { min-height: 39px; padding: 0 12px; border: 1px solid #2a3743; border-radius: 7px; background: #0c131b; color: #e8edf4; }
+.wallet-payment-method-picker { display: flex; min-width: 0; flex-wrap: wrap; gap: 8px; border: 0; }
+.wallet-payment-method-picker legend { width: 100%; margin-bottom: 6px; color: #aab6c2; font-size: 10px; }
+.wallet-payment-method { display: inline-flex; min-height: 39px; align-items: center; gap: 7px; padding: 0 11px; border: 1px solid #2a3743; border-radius: 7px; background: #0c131b; color: #b7c1cb; cursor: pointer; }
+.wallet-payment-method.is-selected { border-color: rgba(245, 187, 53, .58); background: rgba(245, 187, 53, .08); color: #f0d47a; }
+.wallet-payment-method input { accent-color: #efbd3e; }
+.wallet-payment-method small { color: #8996a4; font-size: 8px; }
+.wallet-payment-method-picker > p { align-self: center; color: #8794a2; font-size: 10px; }
 .wallet-package-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; }
 .wallet-package-card { display: flex; min-height: 175px; flex-direction: column; align-items: flex-start; padding: 14px; border: 1px solid #2a3743; border-radius: 8px; background: #0c131b; }
 .wallet-package-name { color: #b6c0ca; font-size: 10px; font-weight: 700; text-transform: capitalize; }

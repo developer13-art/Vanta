@@ -2,6 +2,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/server/db', () => ({ query: vi.fn(), withTransaction: vi.fn() }));
 vi.mock('../src/server/ledger', () => ({ applyLedgerInTransaction: vi.fn() }));
+vi.mock('../src/server/payment-fx', () => ({
+  PAYMENT_CURRENCIES: ['USD', 'NGN', 'GBP', 'EUR', 'JPY', 'MXN', 'GHS', 'KES', 'UGX', 'TZS', 'RWF', 'ZAR'],
+  currencyDecimals: (currency: string) => currency.toUpperCase() === 'JPY' ? 0 : 2,
+  exchangeRates: vi.fn().mockResolvedValue({
+    rates: { USD: 1, NGN: 1500, GBP: 0.8, EUR: 0.9, JPY: 150, MXN: 18, GHS: 12, KES: 130, UGX: 3800, TZS: 2500, RWF: 1300, ZAR: 18 },
+    updatedAt: new Date().toISOString(),
+    nextUpdate: Date.now() / 1000 + 3600,
+  }),
+  quoteUsdAmount: vi.fn(async (amount: number, currency: string) => ({
+    amount: amount * (currency === 'NGN' ? 1500 : 1),
+    rate: currency === 'NGN' ? 1500 : 1,
+    updatedAt: new Date().toISOString(),
+  })),
+  toMinorUnits: (amount: number, currency: string) => Math.round(amount * (currency.toUpperCase() === 'JPY' ? 1 : 100)),
+}));
 vi.mock('../src/server/logger', () => ({
   logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
 }));
@@ -74,13 +89,16 @@ describe('Paystack payment initialization', () => {
       { status: 400, reason: 'invalid_email' },
       'Paystack init failed',
     );
-    expect(query).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('grants credits after Paystack verifies a successful transaction', async () => {
     const payment = {
       id: 'payment-1',
       user_id: 'user-1',
+      provider: 'paystack',
+      provider_reference: 'ref-1',
+      provider_transaction_id: null,
       credits_granted: 100,
       package_code: 'starter',
       amount: '12000',
@@ -124,6 +142,9 @@ describe('Paystack payment initialization', () => {
     const payment = {
       id: 'payment-1',
       user_id: 'user-1',
+      provider: 'paystack',
+      provider_reference: 'ref-1',
+      provider_transaction_id: null,
       credits_granted: 100,
       package_code: 'starter',
       amount: '12000',
@@ -162,6 +183,9 @@ describe('Paystack payment initialization', () => {
       rows: [{
         id: 'payment-1',
         user_id: 'user-1',
+        provider: 'paystack',
+        provider_reference: 'ref-1',
+        provider_transaction_id: null,
         credits_granted: 100,
         package_code: 'starter',
         amount: '12000',

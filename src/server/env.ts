@@ -40,6 +40,13 @@ const EnvSchema = z.object({
   PAYSTACK_PUBLIC_KEY: z.string().min(1),
   PAYSTACK_BASE_URL: z.string().url().default('https://api.paystack.co'),
   PAYSTACK_CURRENCY: z.string().length(3).default('NGN'),
+  FLUTTERWAVE_SECRET_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  FLUTTERWAVE_WEBHOOK_SECRET_HASH: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  FLUTTERWAVE_CURRENCIES: z.string().default('NGN,USD,GBP,EUR,GHS,KES,UGX,TZS,RWF,ZAR'),
+  STRIPE_SECRET_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  STRIPE_WEBHOOK_SECRET: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  STRIPE_BANK_TRANSFER_CURRENCIES: z.string().default('USD,EUR,GBP,JPY,MXN'),
+  PAYMENT_FX_API_URL: z.string().url().default('https://open.er-api.com/v6/latest/USD'),
 
   JOB_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(2000),
   JOB_BATCH_SIZE: z.coerce.number().int().positive().default(5),

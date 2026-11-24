@@ -176,6 +176,9 @@ export interface CreditPackage {
   credits: number;
   priceUsd: number;
   priceNgn: number;
+  amount: number;
+  currency: string;
+  ratesUpdatedAt?: string;
 }
 
 export interface Notification {

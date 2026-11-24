@@ -382,8 +382,9 @@ CREATE INDEX IF NOT EXISTS credit_reservations_active_idx
 CREATE TABLE IF NOT EXISTS payments (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  provider            TEXT NOT NULL,                 -- 'paystack', 'flutterwave'
+  provider            TEXT NOT NULL,                 -- 'paystack', 'flutterwave', 'stripe'
   provider_reference  TEXT NOT NULL UNIQUE,
+  provider_transaction_id TEXT,
   package_code        TEXT NOT NULL,
   credits_granted     INT NOT NULL,
   amount              NUMERIC(18,2) NOT NULL,
@@ -399,6 +400,7 @@ CREATE TABLE IF NOT EXISTS payments (
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider_transaction_id TEXT;
 CREATE INDEX IF NOT EXISTS payments_user_idx ON payments (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS payments_status_idx ON payments (status);
 

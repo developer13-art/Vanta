@@ -67,10 +67,14 @@ export const closeAllSchema = z.object({
 
 export const purchaseSchema = z.object({
   packageCode: z.enum(['starter', 'basic', 'trader', 'pro', 'advanced', 'expert', 'elite']),
+  provider: z.enum(['paystack', 'flutterwave', 'stripe']),
+  method: z.enum(['card', 'bank_transfer']),
+  currency: z.enum(['USD', 'NGN', 'GBP', 'EUR', 'JPY', 'MXN', 'GHS', 'KES', 'UGX', 'TZS', 'RWF', 'ZAR']),
 });
 
 export const verifyPaymentSchema = z.object({
   reference: z.string().min(1).max(128),
+  transactionId: z.string().min(1).max(128).optional(),
 });
 
 export const notificationListSchema = z.object({

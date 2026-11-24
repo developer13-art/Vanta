@@ -208,19 +208,27 @@ export const api = {
   getWallet: () => request<Wallet>('/api/wallet'),
   getLedger: (limit = 100, offset = 0) =>
     request<LedgerEntry[]>(`/api/wallet/ledger?limit=${limit}&offset=${offset}`),
-  listPackages: () => request<CreditPackage[]>('/api/wallet/packages'),
+  listPackages: (currency?: string) =>
+    request<CreditPackage[]>(`/api/wallet/packages${currency ? `?currency=${encodeURIComponent(currency)}` : ''}`),
+  paymentOptions: () => request<{
+    currencies: Array<{
+      code: string;
+      methods: Array<{ provider: 'paystack' | 'flutterwave' | 'stripe'; method: 'card' | 'bank_transfer'; label: string }>;
+    }>;
+    ratesUpdatedAt: string;
+  }>('/api/wallet/payment-options'),
   publicRates: () => request<{ openOrder: number; closeOrder: number; aiAssessment: number }>('/api/public/rates', { auth: false }),
-  purchase: (packageCode: PackageCode) =>
-    request<{ authorizationUrl: string; reference: string }>('/api/wallet/purchase', { method: 'POST', body: { packageCode } }),
-  verifyPayment: (reference: string) =>
+  purchase: (packageCode: PackageCode, provider: 'paystack' | 'flutterwave' | 'stripe', method: 'card' | 'bank_transfer', currency: string) =>
+    request<{ authorizationUrl: string; reference: string }>('/api/wallet/purchase', { method: 'POST', body: { packageCode, provider, method, currency } }),
+  verifyPayment: (reference: string, transactionId?: string) =>
     request<
       | { status: 'successful'; creditsGranted: number }
       | { status: 'pending' | 'failed' }
     >(
-      '/api/wallet/verify-payment', { method: 'POST', body: { reference } },
+      '/api/wallet/verify-payment', { method: 'POST', body: { reference, ...(transactionId ? { transactionId } : {}) } },
     ),
   listPayments: () => request<Array<{
-    id: string; provider: string; provider_reference: string; package_code: string;
+    id: string; provider: string; provider_reference: string; provider_transaction_id: string | null; package_code: string;
     credits_granted: number; amount: string; currency: string; status: string;
     paid_at: string | null; created_at: string;
   }>>('/api/wallet/payments'),

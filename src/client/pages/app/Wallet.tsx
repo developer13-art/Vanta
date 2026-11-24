@@ -7,6 +7,7 @@ import { useToast } from '../../toast-context';
 import type { Wallet as WalletType, CreditPackage, LedgerEntry, PackageCode } from '../../../shared/types';
 
 type PaymentRecord = Awaited<ReturnType<typeof api.listPayments>>[number];
+type PaymentOptions = Awaited<ReturnType<typeof api.paymentOptions>>;
 interface ActivityItem {
   id: string;
   label: string;
@@ -55,6 +56,10 @@ function paymentStatus(status: string): string {
 export function Wallet(): JSX.Element {
   const [wallet, setWallet] = useState<WalletType | null>(null);
   const [packages, setPackages] = useState<CreditPackage[]>([]);
+  const [paymentOptions, setPaymentOptions] = useState<PaymentOptions | null>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState('NGN');
+  const [selectedProvider, setSelectedProvider] = useState<'paystack' | 'flutterwave' | 'stripe'>('paystack');
+  const [selectedMethod, setSelectedMethod] = useState<'card' | 'bank_transfer'>('card');
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,21 +68,19 @@ export function Wallet(): JSX.Element {
   const [walletError, setWalletError] = useState<string | null>(null);
   const [packagesError, setPackagesError] = useState<string | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const [paymentOptionsError, setPaymentOptionsError] = useState<string | null>(null);
   const toast = useToast();
   const initialPaymentCheckStarted = useRef(false);
 
   const load = async () => {
     setLoading(true);
     setWalletError(null);
-    setPackagesError(null);
     setActivityError(null);
-    const [walletResult, packagesResult, ledgerResult, paymentsResult] = await Promise.allSettled([
-      api.getWallet(), api.listPackages(), api.getLedger(100, 0), api.listPayments(),
+    const [walletResult, ledgerResult, paymentsResult] = await Promise.allSettled([
+      api.getWallet(), api.getLedger(100, 0), api.listPayments(),
     ]);
     if (walletResult.status === 'fulfilled') setWallet(walletResult.value);
     else setWalletError(errorMessage(walletResult.reason, 'Wallet details could not be loaded.'));
-    if (packagesResult.status === 'fulfilled') setPackages(packagesResult.value);
-    else setPackagesError(errorMessage(packagesResult.reason, 'Credit packages could not be loaded.'));
     if (ledgerResult.status === 'fulfilled') setLedger(ledgerResult.value);
     else setActivityError(errorMessage(ledgerResult.reason, 'Credit activity could not be loaded.'));
     const paymentRows = paymentsResult.status === 'fulfilled' ? paymentsResult.value : [];
@@ -87,10 +90,14 @@ export function Wallet(): JSX.Element {
     return paymentRows;
   };
 
-  const checkPaymentStatus = async (reference: string, quietPending = false) => {
+  const checkPaymentStatus = async (
+    reference: string,
+    quietPending = false,
+    transactionId?: string,
+  ) => {
     setVerifyingReference(reference);
     try {
-      const result = await api.verifyPayment(reference);
+      const result = await api.verifyPayment(reference, transactionId);
       if (result.status === 'successful') {
         toast.success(`${result.creditsGranted.toLocaleString()} credits added to your balance.`);
       } else if (result.status === 'failed' && !quietPending) {
@@ -110,33 +117,80 @@ export function Wallet(): JSX.Element {
     if (initialPaymentCheckStarted.current) return;
     initialPaymentCheckStarted.current = true;
     const url = new URL(window.location.href);
-    const reference = url.searchParams.get('ref');
-    if (reference) {
-      void load();
-      void checkPaymentStatus(reference).then(() => {
-        const currentUrl = new URL(window.location.href);
-        if (currentUrl.searchParams.get('ref') !== reference) return;
-        currentUrl.searchParams.delete('ref');
-        window.history.replaceState(window.history.state, '', `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
-      });
-      return;
-    }
+    const reference = url.searchParams.get('ref') ?? url.searchParams.get('tx_ref');
+    const transactionId = url.searchParams.get('transaction_id') ?? undefined;
+    const initialize = async () => {
+      try {
+        const options = await api.paymentOptions();
+        setPaymentOptions(options);
+        const initialCurrency = options.currencies.some(({ code }) => code === 'NGN')
+          ? 'NGN'
+          : options.currencies[0]?.code ?? 'NGN';
+        setSelectedCurrency(initialCurrency);
+        const initialMethod = options.currencies.find(({ code }) => code === initialCurrency)?.methods[0];
+        if (initialMethod) {
+          setSelectedProvider(initialMethod.provider);
+          setSelectedMethod(initialMethod.method);
+        }
 
-    void load().then(async (paymentRows) => {
-      const recentPending = paymentRows.filter((payment) => (
-        payment.status === 'pending'
-        && Date.now() - Date.parse(payment.created_at) < 24 * 60 * 60 * 1000
-      )).slice(0, 5);
-      for (const payment of recentPending) {
-        await checkPaymentStatus(payment.provider_reference, true);
+        const paymentRows = await load();
+        if (reference) {
+          await checkPaymentStatus(reference, false, transactionId);
+          const currentUrl = new URL(window.location.href);
+          for (const parameter of ['ref', 'tx_ref', 'transaction_id', 'status', 'checkout']) {
+            currentUrl.searchParams.delete(parameter);
+          }
+          window.history.replaceState(window.history.state, '', `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
+          return;
+        }
+
+        const recentPending = paymentRows.filter((payment) => (
+          payment.status === 'pending'
+          && Date.now() - Date.parse(payment.created_at) < 24 * 60 * 60 * 1000
+        )).slice(0, 5);
+        for (const payment of recentPending) {
+          await checkPaymentStatus(payment.provider_reference, true, payment.provider_transaction_id ?? undefined);
+        }
+      } catch (cause) {
+        setPaymentOptionsError(errorMessage(cause, 'Payment methods could not be loaded.'));
+        await load();
       }
-    });
+    };
+    void initialize();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setPackagesError(null);
+    api.listPackages(selectedCurrency).then((result) => {
+      if (active) setPackages(result);
+    }).catch((cause: unknown) => {
+      if (active) setPackagesError(errorMessage(cause, 'Credit package prices could not be loaded.'));
+    });
+    return () => { active = false; };
+  }, [selectedCurrency]);
+
+  const currentCurrencyOptions = paymentOptions?.currencies.find(({ code }) => code === selectedCurrency);
+  const currentMethods = currentCurrencyOptions?.methods ?? [];
+  const selectedPaymentOption = currentMethods.find((option) => (
+    option.provider === selectedProvider && option.method === selectedMethod
+  ));
+
+  useEffect(() => {
+    if (selectedPaymentOption || currentMethods.length === 0) return;
+    const firstMethod = currentMethods[0];
+    if (!firstMethod) return;
+    setSelectedProvider(firstMethod.provider);
+    setSelectedMethod(firstMethod.method);
+  }, [selectedCurrency, currentMethods, selectedPaymentOption]);
 
   const paymentByReference = useMemo(() => new Map(payments.map((payment) => [payment.provider_reference, payment])), [payments]);
   const activity = useMemo(() => {
     const items: ActivityItem[] = ledger.map((entry) => {
-      const reference = entry.reason.startsWith('paystack:') ? entry.reason.slice('paystack:'.length) : null;
+      const reasonSeparator = entry.reason.indexOf(':');
+      const reference = entry.event_type === 'purchase' && reasonSeparator !== -1
+        ? entry.reason.slice(reasonSeparator + 1)
+        : null;
       const payment = reference ? paymentByReference.get(reference) : undefined;
       return {
         id: entry.id,
@@ -150,8 +204,8 @@ export function Wallet(): JSX.Element {
       };
     });
     const linkedReferences = new Set(ledger
-      .filter((entry) => entry.reason.startsWith('paystack:'))
-      .map((entry) => entry.reason.slice('paystack:'.length)));
+      .filter((entry) => entry.event_type === 'purchase' && entry.reason.includes(':'))
+      .map((entry) => entry.reason.slice(entry.reason.indexOf(':') + 1)));
     for (const payment of payments) {
       if (linkedReferences.has(payment.provider_reference)) continue;
       items.push({
@@ -185,7 +239,7 @@ export function Wallet(): JSX.Element {
   const purchase = async (code: PackageCode) => {
     setBusy(code);
     try {
-      const result = await api.purchase(code);
+      const result = await api.purchase(code, selectedProvider, selectedMethod, selectedCurrency);
       window.location.href = result.authorizationUrl;
     } catch (cause) {
       toast.error(errorMessage(cause, 'Purchase could not be started.'));
@@ -221,7 +275,42 @@ export function Wallet(): JSX.Element {
       {walletError && <div className="wallet-inline-warning" role="alert">{walletError}</div>}
 
       <section className="wallet-section" id="wallet-packages">
-        <div className="wallet-section-heading"><div><span className="wallet-eyebrow">TOP UP</span><h2>Choose a credit package</h2><p>One-time purchase. No subscription required.</p></div><span className="wallet-payment-note"><Icon name="shield" size={15} /> Secure checkout via Paystack</span></div>
+        <div className="wallet-section-heading">
+          <div><span className="wallet-eyebrow">TOP UP</span><h2>Choose a credit package</h2><p>One-time purchase. No subscription required.</p></div>
+          <span className="wallet-payment-note"><Icon name="shield" size={15} />{selectedPaymentOption ? `Secure checkout via ${selectedPaymentOption.label}` : 'Choose a payment method'}</span>
+        </div>
+        {paymentOptionsError && <div className="wallet-inline-warning" role="alert">{paymentOptionsError}</div>}
+        <div className="wallet-checkout-options">
+          <label className="wallet-currency-picker">
+            <span>Payment currency</span>
+            <select
+              value={selectedCurrency}
+              onChange={(event) => setSelectedCurrency(event.target.value)}
+              disabled={!paymentOptions || paymentOptions.currencies.length === 0}
+            >
+              {(paymentOptions?.currencies ?? []).map(({ code }) => <option key={code} value={code}>{code}</option>)}
+            </select>
+          </label>
+          <fieldset className="wallet-payment-method-picker" disabled={!currentMethods.length}>
+            <legend>Payment method</legend>
+            {currentMethods.map((option) => (
+              <label className={`wallet-payment-method${selectedPaymentOption === option ? ' is-selected' : ''}`} key={`${option.provider}-${option.method}`}>
+                <input
+                  type="radio"
+                  name="wallet-payment-method"
+                  checked={option.provider === selectedProvider && option.method === selectedMethod}
+                  onChange={() => {
+                    setSelectedProvider(option.provider);
+                    setSelectedMethod(option.method);
+                  }}
+                />
+                <span>{option.label}</span>
+                {option.method === 'bank_transfer' && <small>Automated confirmation</small>}
+              </label>
+            ))}
+            {!paymentOptionsError && currentMethods.length === 0 && <p>No payment methods are configured for this currency.</p>}
+          </fieldset>
+        </div>
         {packagesError && <div className="wallet-inline-warning" role="alert">{packagesError}</div>}
         {!packagesError && packages.length === 0 && <div className="wallet-empty">No credit packages are currently available.</div>}
         <div className="wallet-package-grid">
@@ -229,15 +318,20 @@ export function Wallet(): JSX.Element {
             <article key={item.code} className="wallet-package-card">
               <span className="wallet-package-name">{item.code}</span>
               <strong className="wallet-package-credits">{item.credits.toLocaleString()} <small>credits</small></strong>
-              <div className="wallet-package-price"><strong>₦{item.priceNgn.toLocaleString()}</strong><span> / one-time</span></div>
-              <div className="wallet-package-alt-price">Reference price: ${item.priceUsd.toLocaleString()} USD</div>
-              <Button onClick={() => void purchase(item.code)} loading={busy === item.code} disabled={busy !== null && busy !== item.code} className="wallet-buy-button">
+              <div className="wallet-package-price"><strong>{formatCurrency(String(item.amount), item.currency)}</strong><span> / one-time</span></div>
+              <div className="wallet-package-alt-price">Converted from ${item.priceUsd.toLocaleString()} USD</div>
+              <Button onClick={() => void purchase(item.code)} loading={busy === item.code} disabled={!selectedPaymentOption || busy !== null && busy !== item.code} className="wallet-buy-button">
                 {busy === item.code ? 'Opening checkout…' : 'Purchase credits'}
               </Button>
             </article>
           ))}
         </div>
-        <p className="wallet-billing-footnote">Checkout is securely processed by Paystack. Credits are added after payment confirmation.</p>
+        <p className="wallet-billing-footnote">
+          Prices are converted from USD using the latest available exchange rate{packages[0]?.ratesUpdatedAt
+            ? ` (updated ${new Date(packages[0].ratesUpdatedAt).toLocaleString()})`
+            : paymentOptions?.ratesUpdatedAt ? ` (updated ${new Date(paymentOptions.ratesUpdatedAt).toLocaleString()})` : ''}.
+          {' '}Credits are added only after the selected provider confirms payment.
+        </p>
       </section>
 
       <div className="wallet-lower-grid">
@@ -258,7 +352,11 @@ export function Wallet(): JSX.Element {
                       <button
                         type="button"
                         className="wallet-verify-payment"
-                        onClick={() => { if (item.reference) void checkPaymentStatus(item.reference); }}
+                        onClick={() => {
+                          if (item.reference) {
+                            void checkPaymentStatus(item.reference, false, paymentByReference.get(item.reference)?.provider_transaction_id ?? undefined);
+                          }
+                        }}
                         disabled={verifyingReference !== null}
                       >
                         {verifyingReference === item.reference ? 'Checking…' : 'Check payment'}

@@ -10,6 +10,14 @@ interface CreditRates {
   aiAssessment: number;
 }
 
+function formatPackagePrice(item: CreditPackage): string {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: item.currency }).format(item.amount);
+  } catch {
+    return `${item.amount.toLocaleString()} ${item.currency}`;
+  }
+}
+
 export function Pricing(): JSX.Element {
   const [packages, setPackages] = useState<CreditPackage[]>([]);
   const [rates, setRates] = useState<CreditRates | null>(null);
@@ -17,7 +25,7 @@ export function Pricing(): JSX.Element {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.allSettled([api.listPackages(), api.publicRates()]).then(([packageResult, ratesResult]) => {
+    Promise.allSettled([api.listPackages('NGN'), api.publicRates()]).then(([packageResult, ratesResult]) => {
       if (packageResult.status === 'fulfilled') setPackages(packageResult.value);
       else setError(packageResult.reason instanceof ApiRequestError ? packageResult.reason.message : 'Credit packages could not be loaded.');
       if (ratesResult.status === 'fulfilled') setRates(ratesResult.value);
@@ -37,7 +45,7 @@ export function Pricing(): JSX.Element {
       <header className="public-page-heading">
         <span className="public-page-eyebrow">STRAIGHTFORWARD BILLING</span>
         <h1>Credits that keep you in control</h1>
-        <p>Choose a one-time credit package. Review the current per-action rates before you start.</p>
+        <p>Choose a one-time credit package. Prices shown in NGN are converted from USD using the latest available exchange rate.</p>
       </header>
 
       <section className="pricing-rate-strip" aria-label="Credit rates">
@@ -59,8 +67,8 @@ export function Pricing(): JSX.Element {
             <article key={item.code} className="pricing-package-card">
               <span className="pricing-package-name">{item.code}</span>
               <strong className="pricing-package-credits">{item.credits.toLocaleString()} <small>credits</small></strong>
-              <div className="pricing-package-price">₦{item.priceNgn.toLocaleString()} <small>one-time</small></div>
-              <span className="pricing-package-reference">Reference price: ${item.priceUsd.toLocaleString()} USD</span>
+              <div className="pricing-package-price">{formatPackagePrice(item)} <small>one-time</small></div>
+              <span className="pricing-package-reference">USD base price: ${item.priceUsd.toLocaleString()}</span>
               <Link to="/signup" className="pricing-package-button">Get started <Icon name="arrow-right" size={15} /></Link>
             </article>
           ))}
