@@ -79,6 +79,7 @@ describe('FXAPIs integration', () => {
       .mockResolvedValueOnce(response({
         data: [{ name: 'EURUSD.a', description: 'Euro vs US Dollar', digits: 5, volumeMin: 0.01, volumeStep: 0.01, tradable: true }],
       }))
+      .mockResolvedValueOnce(response({ data: { state: 'ready' } }))
       .mockResolvedValueOnce(response({
         data: {
           candles: [{
@@ -93,7 +94,24 @@ describe('FXAPIs integration', () => {
     await expect(getCandles('fx-account-1', 'EURUSD.a', '15m', 100)).resolves.toEqual([
       { time: 1795514400, open: 1.1, high: 1.2, low: 1, close: 1.15, volume: 52 },
     ]);
-    expect(String(state.fetch.mock.calls[1]?.[0])).toContain('timeframe=M15');
+    expect(String(state.fetch.mock.calls[2]?.[0])).toContain('timeframe=M15');
+  });
+
+  it('warms a standby account and waits until online before requesting candles', async () => {
+    state.fetch
+      .mockResolvedValueOnce(response({ data: { state: 'standby' } }))
+      .mockResolvedValueOnce(response({ data: { state: 'starting' } }, 202))
+      .mockResolvedValueOnce(response({ data: { state: 'ready' } }))
+      .mockResolvedValueOnce(response({ data: { candles: [] } }));
+
+    await expect(getCandles('fx-account-1', 'EURUSD', '1m', 10)).resolves.toEqual([]);
+
+    expect(state.fetch.mock.calls.map(([url]) => String(url))).toEqual([
+      'https://api.fxapis.test/v1/accounts/fx-account-1/status',
+      'https://api.fxapis.test/v1/accounts/fx-account-1/warm',
+      'https://api.fxapis.test/v1/accounts/fx-account-1/status',
+      expect.stringContaining('/v1/accounts/fx-account-1/candles?'),
+    ]);
   });
 
   it('sends decimal-string volumes and idempotency keys for orders', async () => {

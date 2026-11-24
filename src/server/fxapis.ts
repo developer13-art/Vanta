@@ -121,6 +121,63 @@ export async function getAccountState(accountId: string): Promise<{ state: strin
   return { state: data.state, detail: typeof data.detail === 'string' ? data.detail : null };
 }
 
+const ONLINE_ACCOUNT_STATES = new Set(['ready', 'executing', 'degraded']);
+const ATTENTION_ACCOUNT_STATES = new Set([
+  'invalid_credentials', 'trading_disabled', 'needs_2fa', 'needs_certificate',
+]);
+const WARMABLE_ACCOUNT_STATES = new Set(['created', 'standby', 'offline', 'error']);
+const accountWarmups = new Map<string, Promise<void>>();
+
+async function bringAccountOnline(accountId: string): Promise<void> {
+  let accountState = await getAccountState(accountId);
+  if (ONLINE_ACCOUNT_STATES.has(accountState.state)) return;
+  if (ATTENTION_ACCOUNT_STATES.has(accountState.state)) {
+    throw new FxApisError(
+      accountState.detail ?? `FXAPIs account needs attention (${accountState.state}).`,
+      409,
+      'ACCOUNT_NEEDS_ATTENTION',
+    );
+  }
+
+  let warmRequested = false;
+  if (WARMABLE_ACCOUNT_STATES.has(accountState.state)) {
+    await requestData(`/v1/accounts/${encodeURIComponent(accountId)}/warm`, { method: 'POST', body: {} });
+    warmRequested = true;
+  }
+
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    accountState = await getAccountState(accountId);
+    if (ONLINE_ACCOUNT_STATES.has(accountState.state)) return;
+    if (ATTENTION_ACCOUNT_STATES.has(accountState.state)) {
+      throw new FxApisError(
+        accountState.detail ?? `FXAPIs account needs attention (${accountState.state}).`,
+        409,
+        'ACCOUNT_NEEDS_ATTENTION',
+      );
+    }
+    if (!warmRequested && WARMABLE_ACCOUNT_STATES.has(accountState.state)) {
+      await requestData(`/v1/accounts/${encodeURIComponent(accountId)}/warm`, { method: 'POST', body: {} });
+      warmRequested = true;
+    }
+  }
+  throw new FxApisError('FXAPIs account did not come online in time. Try again shortly.', 503, 'ACCOUNT_WARM_TIMEOUT');
+}
+
+export async function ensureAccountOnline(accountId: string): Promise<void> {
+  const currentWarmup = accountWarmups.get(accountId);
+  if (currentWarmup) return currentWarmup;
+
+  const warmup = bringAccountOnline(accountId);
+  accountWarmups.set(accountId, warmup);
+  try {
+    await warmup;
+  } finally {
+    if (accountWarmups.get(accountId) === warmup) accountWarmups.delete(accountId);
+  }
+}
+
 export async function getAccountFigures(accountId: string): Promise<{
   balance: number | null;
   equity: number | null;
@@ -211,6 +268,7 @@ export async function getCandles(
   timeframe: '1m' | '5m' | '15m' | '1h',
   count: number,
 ): Promise<Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>> {
+  await ensureAccountOnline(accountId);
   const timeframes = { '1m': 'M1', '5m': 'M5', '15m': 'M15', '1h': 'H1' } as const;
   const params = new URLSearchParams({ symbol, timeframe: timeframes[timeframe], count: String(count) });
   const data = requireRecord(await requestData(`/v1/accounts/${encodeURIComponent(accountId)}/candles?${params}`));
