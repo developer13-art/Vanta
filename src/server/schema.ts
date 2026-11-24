@@ -37,6 +37,7 @@ export const connectBrokerSchema = z.object({
   password: z.string().min(1).max(256),
   mode: z.enum(['demo', 'live']),
   platform: z.enum(['mt4', 'mt5']).optional(),
+  connectionProvider: z.enum(['metaapi', 'fxapis']).optional(),
 });
 
 export const createBotSchema = z.object({

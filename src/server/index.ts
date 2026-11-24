@@ -4,7 +4,7 @@ import { logger } from './logger';
 import { pool, closePool } from './db';
 import { startScheduler, stopScheduler, registerHandler, recoverStaleJobs, enqueue } from './jobs';
 import { reconcileBrokerAccount, reconcileOrder } from './reconciliation';
-import { fetchAccountInformation } from './metaapi';
+import { getBrokerHealth } from './broker-providers';
 import { query } from './db';
 import { checkLowBalance, createNotification } from './notifications';
 
@@ -16,15 +16,44 @@ registerHandler('reconciliation', async (payload) => {
 
 registerHandler('broker_health_check', async (payload) => {
   const brokerAccountId = String(payload.brokerAccountId);
-  const acc = await query<{ id: string; metaapi_account_id: string; user_id: string }>(
-    `SELECT id, metaapi_account_id, user_id FROM broker_accounts WHERE id=$1`,
+  const attempt = typeof payload.attempt === 'number' && Number.isInteger(payload.attempt)
+    ? payload.attempt
+    : 0;
+  const acc = await query<{
+    id: string; connection_provider: 'metaapi' | 'fxapis'; provider_account_id: string; user_id: string;
+  }>(
+    `SELECT id, connection_provider, provider_account_id, user_id FROM broker_accounts WHERE id=$1`,
     [brokerAccountId],
   );
   const account = acc.rows[0];
   if (!account) return;
 
   try {
-    const info = await fetchAccountInformation(account.metaapi_account_id);
+    const health = await getBrokerHealth(account.connection_provider, account.provider_account_id);
+    if (health.status !== 'connected' || !health.info) {
+      await query(
+        `UPDATE broker_accounts
+            SET status=$2, last_health_check_at=now(), last_health_status=$2,
+                last_error=$3, updated_at=now()
+          WHERE id=$1`,
+        [brokerAccountId, health.status, health.status === 'requires_attention' ? health.detail : null],
+      );
+      if ((health.status === 'connecting' || health.status === 'reconnecting') && attempt < 8) {
+        await enqueue(
+          'broker_health_check',
+          { brokerAccountId, attempt: attempt + 1 },
+          { runAt: new Date(Date.now() + 15_000) },
+        );
+      }
+      if (health.status === 'requires_attention') {
+        await createNotification({
+          userId: account.user_id, category: 'broker', severity: 'warning',
+          title: 'Broker connection issue', body: 'Your broker account needs attention. Check the connection details and broker status.',
+        });
+      }
+      return;
+    }
+    const info = health.info;
     await query(
       `UPDATE broker_accounts
           SET status='connected', account_currency=$2, account_balance=$3,
@@ -83,14 +112,14 @@ registerHandler('notification_dispatch', async (payload) => {
 registerHandler('tick_analysis', async (payload) => {
   const botId = String(payload.botId);
   const res = await query<{
-    state: string; user_id: string; broker_account_id: string; metaapi_account_id: string;
+    state: string; user_id: string; broker_account_id: string;
     strategy_name: string; strategy_params: Record<string, unknown>;
     lot_size: string; entry_batch_size: number; max_concurrent_positions: number;
     daily_loss_limit: string; drawdown_limit: string; margin_utilization_limit: string;
     max_spread_points: number | null; cooldown_seconds: number;
     trading_sessions: Record<string, Array<[string, string]>> | null;
   }>(
-    `SELECT b.state, b.user_id, b.broker_account_id, ba.metaapi_account_id,
+    `SELECT b.state, b.user_id, b.broker_account_id,
             sv.name AS strategy_name, b.strategy_params,
             b.lot_size, b.entry_batch_size, b.max_concurrent_positions,
             b.daily_loss_limit, b.drawdown_limit, b.margin_utilization_limit,

@@ -2,6 +2,7 @@ import type {
   LoginResponse, AuthUser, BrokerAccount, BrokerSymbol, BotSummary,
   Position, Wallet, LedgerEntry, CreditPackage, Notification,
   Candle, AnalyticsSummary, DailyPnl, ApiError, PackageCode, TradeHistoryEntry,
+  BrokerPlatform, BrokerProvider,
 } from '../shared/types';
 
 const ACCESS_KEY = 'vanta.access';
@@ -147,11 +148,15 @@ export const api = {
   }>>('/api/auth/sessions'),
 
   // ---- Brokers ----
+  brokerProviders: () => request<{
+    providers: Array<{ id: BrokerProvider; label: string; platforms: BrokerPlatform[] }>;
+    defaultProvider: BrokerProvider;
+  }>('/api/brokers/providers'),
   listBrokers: () => request<BrokerAccount[]>('/api/brokers'),
   getBroker: (id: string) => request<BrokerAccount>(`/api/brokers/${id}`),
   createBroker: (body: {
     label: string; brokerName: string; server: string; login: string;
-    password: string; mode: 'demo' | 'live'; platform?: 'mt4' | 'mt5';
+    password: string; mode: 'demo' | 'live'; platform?: BrokerPlatform; connectionProvider?: BrokerProvider;
   }) => request<{ id: string; status: string }>('/api/brokers', { method: 'POST', body }),
   brokerSymbols: (id: string) => request<BrokerSymbol[]>(`/api/brokers/${id}/symbols`),
   discoverSymbols: (id: string) =>

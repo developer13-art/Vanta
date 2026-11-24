@@ -40,6 +40,7 @@ This command only grants the first admin role and refuses to run if an admin alr
 - **Risk engine** is independent from AI. AI cannot override limits.
 - **Job queue** is a single `jobs` table. The scheduler is one `setInterval` in the Express process. No external queue.
 - **Payments** support Paystack, Flutterwave, and Stripe Checkout, with available options determined by configured credentials and currencies. Flutterwave and Stripe require signed webhook secrets; Stripe bank transfers must also be enabled in the Stripe dashboard. Payment amounts are converted from the USD package prices using the configured daily exchange-rate feed and stored with each payment. Credits are granted only after provider-side verification.
+- **Broker connections** support MetaApi for MT4 and MT5, plus FXAPIs for MT5 account connections, trading, and broker-provided candles. When `FXAPIS_API_KEY` is configured, it is the default provider for new MT5 connections; users can select MetaApi instead. MT4 accounts continue to use MetaApi.
 
 ### Payment Provider Setup
 
@@ -48,7 +49,8 @@ This command only grants the first admin role and refuses to run if an admin alr
 - To enable Stripe, set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, then configure the Stripe webhook URL as `https://<your-domain>/api/payments/webhook/stripe`. Subscribe to `checkout.session.completed` and `checkout.session.async_payment_succeeded`.
 - Stripe bank transfers are offered only for currencies in `STRIPE_BANK_TRANSFER_CURRENCIES`; enable bank transfers for the Stripe account in its dashboard as well. Stripe account and country eligibility still applies.
 - `FLUTTERWAVE_CURRENCIES` should list only currencies enabled for the merchant account. `PAYMENT_FX_API_URL` defaults to ExchangeRate-API's free daily USD feed.
-- Run `npm run db:init` after updating to add the payment transaction ID column used for asynchronous confirmations.
+- To enable FXAPIs, set the server-side `FXAPIS_API_KEY` from the [FXAPIs dashboard](https://fxapis.com/dashboard/keys). Keep the key out of client code. FXAPIs supports MT5 only; MetaApi remains the provider for MT4 and can also be chosen for MT5.
+- Run `npm run db:init` after updating to add the payment transaction ID column and broker-provider fields.
 
 ## Testing
 

@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiRequestError } from '../../api';
 import { Button } from '../../components/Button';
 import { Icon } from '../../components/Icon';
 import { Input } from '../../components/Input';
 import { useToast } from '../../toast-context';
+import type { BrokerPlatform, BrokerProvider } from '../../../shared/types';
 
-type Platform = 'mt4' | 'mt5';
 type Mode = 'demo' | 'live';
 
 export function BrokerAdd(): JSX.Element {
@@ -14,21 +14,47 @@ export function BrokerAdd(): JSX.Element {
   const toast = useToast();
   const [form, setForm] = useState({
     label: '', brokerName: '', server: '', login: '', password: '',
-    mode: 'demo' as Mode, platform: 'mt5' as Platform,
+    mode: 'demo' as Mode, platform: 'mt5' as BrokerPlatform, connectionProvider: 'metaapi' as BrokerProvider,
   });
+  const [providerOptions, setProviderOptions] = useState<Awaited<ReturnType<typeof api.brokerProviders>> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.brokerProviders()
+      .then((options) => {
+        setProviderOptions(options);
+        setForm((current) => ({ ...current, connectionProvider: options.defaultProvider }));
+      })
+      .catch((cause: unknown) => setError(cause instanceof ApiRequestError ? cause.message : 'Broker providers could not be loaded.'));
+  }, []);
 
   const set = <K extends keyof typeof form>(key: K, value: typeof form[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
+  const compatibleProviders = providerOptions?.providers.filter((provider) => provider.platforms.includes(form.platform)) ?? [];
+  const choosePlatform = (platform: BrokerPlatform) => {
+    const compatible = providerOptions?.providers.filter((provider) => provider.platforms.includes(platform)) ?? [];
+    setForm((current) => ({
+      ...current,
+      platform,
+      connectionProvider: compatible.some((provider) => provider.id === current.connectionProvider)
+        ? current.connectionProvider
+        : compatible.find((provider) => provider.id === providerOptions?.defaultProvider)?.id ?? compatible[0]?.id ?? current.connectionProvider,
+    }));
+  };
+
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
+    if (!providerOptions || !compatibleProviders.some((provider) => provider.id === form.connectionProvider)) {
+      setError('No configured broker provider supports the selected platform.');
+      return;
+    }
     setLoading(true);
     try {
       const result = await api.createBroker(form);
-      toast.success('Account provisioning started');
+      toast.success(`${form.connectionProvider === 'fxapis' ? 'FXAPIs' : 'MetaApi'} account connection started`);
       navigate(`/app/brokers/${result.id}`);
     } catch (cause) {
       setError(cause instanceof ApiRequestError ? cause.message : 'Connection failed. Please try again.');
@@ -57,7 +83,7 @@ export function BrokerAdd(): JSX.Element {
                   key={platform}
                   className={`broker-platform-option${form.platform === platform ? ' is-selected' : ''}`}
                   aria-pressed={form.platform === platform}
-                  onClick={() => set('platform', platform)}
+                  onClick={() => choosePlatform(platform)}
                 >
                   <span className="broker-platform-mark">{platform.toUpperCase()}</span>
                   <span><strong>MetaTrader {platform === 'mt4' ? '4' : '5'}</strong><small>{platform === 'mt4' ? 'MT4 account' : 'MT5 account'}</small></span>
@@ -65,6 +91,32 @@ export function BrokerAdd(): JSX.Element {
                 </button>
               ))}
             </div>
+            <label className="broker-provider-select">
+              <span>Connection provider</span>
+              <select
+                value={form.connectionProvider}
+                onChange={(event) => {
+                  const selected = compatibleProviders.find((provider) => provider.id === event.currentTarget.value);
+                  if (selected) set('connectionProvider', selected.id);
+                }}
+                disabled={!providerOptions || compatibleProviders.length < 2}
+              >
+                {compatibleProviders.map((provider) => (
+                  <option value={provider.id} key={provider.id}>{provider.label}</option>
+                ))}
+              </select>
+              <small>
+                {providerOptions
+                  ? compatibleProviders.length === 0
+                    ? 'No provider is configured for this platform.'
+                    : form.platform === 'mt4'
+                      ? 'FXAPIs currently supports MT5 only; MT4 uses MetaApi.'
+                      : compatibleProviders.some((provider) => provider.id === 'fxapis')
+                        ? 'FXAPIs is the default for MT5. You can switch to MetaApi when both are configured.'
+                        : 'FXAPIs is not configured on the server; MetaApi is currently available.'
+                  : 'Loading configured providers…'}
+              </small>
+            </label>
             <div className="broker-mode-options" role="group" aria-label="Account mode">
               <button type="button" className={form.mode === 'demo' ? 'is-selected' : ''} aria-pressed={form.mode === 'demo'} onClick={() => set('mode', 'demo')}>
                 <strong>Demo</strong><small>Recommended to start</small>
@@ -87,7 +139,12 @@ export function BrokerAdd(): JSX.Element {
             <p className="broker-connect-hint">Use your trading password—not your broker website password. Find the exact server name in your broker’s account details.</p>
           </section>
 
-          <div className="broker-connect-security"><Icon name="shield" size={19} /><p><strong>Your credentials are protected.</strong> VANTA encrypts the submitted password at rest and does not display it again after submission.</p></div>
+          <div className="broker-connect-security"><Icon name="shield" size={19} /><p>
+            <strong>Your credentials are protected.</strong>{' '}
+            {form.connectionProvider === 'fxapis'
+              ? 'FXAPIs encrypts the password on arrival; VANTA does not keep a second copy.'
+              : 'VANTA encrypts the submitted password at rest and does not display it again after submission.'}
+          </p></div>
           {error && <div className="broker-connect-error" role="alert">{error}</div>}
           <div className="broker-connect-submit">
             <Button type="submit" loading={loading}>Connect account <Icon name="arrow-right" size={16} /></Button>

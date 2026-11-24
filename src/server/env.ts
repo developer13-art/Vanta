@@ -28,6 +28,8 @@ const EnvSchema = z.object({
   METAAPI_TOKEN: z.string().min(1),
   METAAPI_BASE_URL: z.string().url().default('https://mt-client-api-v1.new-york.agiliumtrade.ai'),
   METAAPI_PROVISIONING_BASE_URL: z.string().url().default('https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai'),
+  FXAPIS_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  FXAPIS_API_BASE_URL: z.string().url().default('https://api.fxapis.com'),
 
   SMTP_HOST: z.string().min(1),
   SMTP_PORT: z.coerce.number().int().positive(),

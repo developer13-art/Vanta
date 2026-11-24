@@ -1,7 +1,9 @@
 import { withTransaction, query } from './db';
 import { Errors } from './errors';
 import { logger } from './logger';
-import { submitMarketOrder } from './metaapi';
+import { closeBrokerPosition, submitBrokerMarketOrder } from './broker-providers';
+import type { BrokerOrderResult } from './broker-providers';
+import type { BrokerProvider } from '../shared/types';
 import { chargeOrderOpen } from './billing';
 import { enqueue } from './jobs';
 import { randomUUID } from 'node:crypto';
@@ -10,7 +12,8 @@ export interface SubmitOrderArgs {
   userId: string;
   botId: string;
   brokerAccountId: string;
-  metaapiAccountId: string;
+  connectionProvider: BrokerProvider;
+  providerAccountId: string;
   brokerSymbolId: string;
   brokerSymbol: string;
   side: 'buy' | 'sell';
@@ -29,7 +32,7 @@ export interface SubmitOrderResult {
 /**
  * Idempotent order submission:
  * 1. INSERT with idempotency_key UNIQUE — if conflict, return 'duplicate' without calling broker.
- * 2. Call MetaApi.
+ * 2. Submit through the selected broker provider.
  * 3. Update order row with broker response.
  * 4. Charge credits only on broker-confirmed acceptance.
  * 5. Schedule reconciliation if outcome is ambiguous (timeout).
@@ -72,13 +75,18 @@ export async function submitOrder(args: SubmitOrderArgs): Promise<SubmitOrderRes
 
   let brokerResult;
   try {
-    brokerResult = await submitMarketOrder(args.metaapiAccountId, {
-      symbol: args.brokerSymbol,
-      side: args.side,
-      volume: args.volume,
-      comment: args.comment ?? `vanta:${orderId}`,
-      clientId: orderId,
-    });
+    brokerResult = await submitBrokerMarketOrder(
+      args.connectionProvider,
+      args.providerAccountId,
+      {
+        symbol: args.brokerSymbol,
+        side: args.side,
+        volume: args.volume,
+        comment: args.comment ?? `vanta:${orderId}`,
+        clientId: orderId,
+      },
+      idempotencyKey,
+    );
   } catch (err) {
     logger.warn({ err, orderId }, 'Broker submit failed — marking unknown, queuing reconciliation');
     await query(
@@ -99,13 +107,27 @@ export async function submitOrder(args: SubmitOrderArgs): Promise<SubmitOrderRes
     return { orderId, brokerTicket: null, status: 'rejected', message: brokerResult.message };
   }
 
+  if (brokerResult.status === 'unknown' || !brokerResult.ticket) {
+    await query(
+      `UPDATE orders SET status='unknown', provider_order_id=$2, broker_response=$3 WHERE id=$1`,
+      [orderId, brokerResult.providerOrderId, JSON.stringify(brokerResult)],
+    );
+    await enqueue('reconciliation', { orderId }, { runAt: new Date(Date.now() + 30_000), maxAttempts: 10 });
+    return {
+      orderId,
+      brokerTicket: null,
+      status: 'unknown',
+      message: brokerResult.message ?? 'The broker is still confirming this order.',
+    };
+  }
+
   await withTransaction(async (client) => {
     await client.query(
       `UPDATE orders
-          SET status='accepted', broker_ticket=$2, broker_response=$3,
-              filled_price=$4, acknowledged_at=now(), filled_at=now()
+          SET status='accepted', broker_ticket=$2, provider_order_id=$3, broker_response=$4,
+              filled_price=$5, acknowledged_at=now(), filled_at=now()
         WHERE id=$1`,
-      [orderId, brokerResult.ticket, JSON.stringify(brokerResult), brokerResult.price],
+      [orderId, brokerResult.ticket, brokerResult.providerOrderId, JSON.stringify(brokerResult), brokerResult.price],
     );
 
     // Track the resulting position immediately so risk engine sees it.
@@ -159,11 +181,12 @@ export async function closePosition(args: {
 }): Promise<void> {
   const pos = await query<{
     id: string; bot_id: string; broker_account_id: string; broker_ticket: string;
-    broker_symbol_id: string; broker_symbol: string; side: string; volume: number;
-    closed_at: string | null; metaapi_account_id: string;
+    broker_symbol_id: string; broker_symbol: string; side: 'buy' | 'sell'; volume: number;
+    closed_at: string | null; connection_provider: BrokerProvider; provider_account_id: string;
   }>(
     `SELECT p.id, p.bot_id, p.broker_account_id, p.broker_ticket, p.broker_symbol_id,
-            p.side, p.volume, p.closed_at, s.broker_symbol, b.metaapi_account_id
+            p.side, p.volume, p.closed_at, s.broker_symbol,
+            b.connection_provider, b.provider_account_id
        FROM positions p
        JOIN broker_symbols s ON s.id = p.broker_symbol_id
        JOIN broker_accounts b ON b.id = p.broker_account_id
@@ -196,15 +219,52 @@ export async function closePosition(args: {
   if (insertRes.rows.length === 0) return;
   const orderId = insertRes.rows[0].id;
 
+  let result: BrokerOrderResult;
   try {
-    const result = await submitMarketOrder(position.metaapi_account_id, {
-      symbol: position.broker_symbol,
-      side: closeSide,
-      volume: position.volume,
-      comment: `close:${position.id}`,
-      clientId: orderId,
+    result = await closeBrokerPosition(
+      position.connection_provider,
+      position.provider_account_id,
+      {
+        ticket: position.broker_ticket,
+        symbol: position.broker_symbol,
+        side: position.side,
+        volume: position.volume,
+        clientId: orderId,
+        idempotencyKey,
+      },
+    );
+  } catch (err) {
+    await query(`UPDATE orders SET status='unknown', broker_response=$2 WHERE id=$1`, [
+      orderId,
+      JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+    ]);
+    await enqueue('reconciliation', { brokerAccountId: position.broker_account_id }, {
+      runAt: new Date(Date.now() + 30_000), maxAttempts: 10,
     });
+    throw err;
+  }
 
+  if (result.status === 'rejected') {
+    await query(
+      `UPDATE orders SET status='rejected', provider_order_id=$2, broker_response=$3,
+              rejection_reason=$4, acknowledged_at=now()
+        WHERE id=$1`,
+      [orderId, result.providerOrderId, JSON.stringify(result), result.message ?? 'rejected'],
+    );
+    throw Errors.unprocessable(result.message ?? 'The broker rejected the close request.');
+  }
+  if (result.status !== 'accepted' || !result.ticket) {
+    await query(
+      `UPDATE orders SET status='unknown', provider_order_id=$2, broker_response=$3 WHERE id=$1`,
+      [orderId, result.providerOrderId, JSON.stringify(result)],
+    );
+    await enqueue('reconciliation', { brokerAccountId: position.broker_account_id }, {
+      runAt: new Date(Date.now() + 30_000), maxAttempts: 10,
+    });
+    throw Errors.unavailable(result.message ?? 'The broker is still confirming the close request.');
+  }
+
+  try {
     await withTransaction(async (client) => {
       await client.query(
         `UPDATE positions
@@ -215,13 +275,24 @@ export async function closePosition(args: {
       );
       await client.query(
         `UPDATE orders
-            SET status='accepted', broker_ticket=$2, filled_price=$3,
-                broker_response=$4, acknowledged_at=now(), filled_at=now()
+            SET status='accepted', broker_ticket=$2, provider_order_id=$3, filled_price=$4,
+                broker_response=$5, acknowledged_at=now(), filled_at=now()
           WHERE id=$1`,
-        [orderId, result.ticket, result.price, JSON.stringify(result)],
+        [orderId, result.ticket, result.providerOrderId, result.price, JSON.stringify(result)],
       );
     });
+  } catch (err) {
+    await query(
+      `UPDATE orders SET status='unknown', provider_order_id=$2, broker_response=$3 WHERE id=$1`,
+      [orderId, result.providerOrderId, JSON.stringify({ ...result, databaseError: true })],
+    );
+    await enqueue('reconciliation', { brokerAccountId: position.broker_account_id }, {
+      runAt: new Date(Date.now() + 30_000), maxAttempts: 10,
+    });
+    throw err;
+  }
 
+  try {
     await chargeOrderClose({
       userId: args.userId,
       botId: position.bot_id,
@@ -229,16 +300,19 @@ export async function closePosition(args: {
       orderId,
       brokerTicket: result.ticket,
     });
-
-    await enqueue('reconciliation', { orderId }, { runAt: new Date(Date.now() + 10_000) });
   } catch (err) {
-    await query(`UPDATE orders SET status='unknown', broker_response=$2 WHERE id=$1`, [
-      orderId,
-      JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
-    ]);
-    await enqueue('reconciliation', { orderId }, { runAt: new Date(Date.now() + 30_000), maxAttempts: 10 });
-    throw err;
+    logger.error({ err, orderId }, 'Billing failed for confirmed position close');
+    await enqueue('notification_dispatch', {
+      userId: args.userId,
+      category: 'wallet',
+      severity: 'critical',
+      title: 'Billing error',
+      body: 'Your position was closed but we failed to charge credits. Support has been notified.',
+    });
   }
+  await enqueue('reconciliation', { brokerAccountId: position.broker_account_id }, {
+    runAt: new Date(Date.now() + 10_000),
+  });
 }
 
 async function chargeOrderClose(args: {

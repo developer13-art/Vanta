@@ -137,7 +137,8 @@ adminRouter.get('/broker-accounts', async (_req, res, next) => {
   try {
     const rows = await query(
       `SELECT id, user_id, label, broker_name, server, login, mode, status,
-              metaapi_account_id, last_health_status, last_error, created_at
+              connection_provider, platform, provider_account_id,
+              last_health_status, last_error, created_at
          FROM broker_accounts ORDER BY created_at DESC LIMIT 500`,
     );
     res.json(rows.rows);

@@ -84,9 +84,12 @@ CREATE TABLE IF NOT EXISTS broker_accounts (
   broker_name              TEXT NOT NULL,
   server                   TEXT NOT NULL,
   login                    TEXT NOT NULL,
-  metaapi_account_id       TEXT UNIQUE NOT NULL,
+  connection_provider      TEXT NOT NULL DEFAULT 'metaapi',
+  provider_account_id      TEXT,
+  platform                 TEXT CHECK (platform IN ('mt4','mt5')),
+  metaapi_account_id       TEXT UNIQUE,
   -- AES-256-GCM encrypted blob of {password, investorPassword}
-  encrypted_credentials    BYTEA NOT NULL,
+  encrypted_credentials    BYTEA,
   -- SHA-256 hash of login+server for dedupe/audit (never the password)
   identity_hash            TEXT NOT NULL,
   mode                     TEXT NOT NULL CHECK (mode IN ('demo','live')),
@@ -112,6 +115,18 @@ CREATE TABLE IF NOT EXISTS broker_accounts (
   updated_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (user_id, broker_name, server, login)
 );
+
+ALTER TABLE broker_accounts ADD COLUMN IF NOT EXISTS connection_provider TEXT NOT NULL DEFAULT 'metaapi';
+ALTER TABLE broker_accounts ADD COLUMN IF NOT EXISTS provider_account_id TEXT;
+ALTER TABLE broker_accounts ADD COLUMN IF NOT EXISTS platform TEXT;
+ALTER TABLE broker_accounts ALTER COLUMN metaapi_account_id DROP NOT NULL;
+ALTER TABLE broker_accounts ALTER COLUMN encrypted_credentials DROP NOT NULL;
+UPDATE broker_accounts
+   SET provider_account_id = metaapi_account_id
+ WHERE provider_account_id IS NULL AND metaapi_account_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS broker_provider_account_unique_idx
+  ON broker_accounts (connection_provider, provider_account_id)
+  WHERE provider_account_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS broker_accounts_user_idx ON broker_accounts (user_id);
 CREATE INDEX IF NOT EXISTS broker_accounts_status_idx ON broker_accounts (status);
@@ -233,6 +248,7 @@ CREATE TABLE IF NOT EXISTS orders (
   broker_account_id  UUID NOT NULL REFERENCES broker_accounts(id) ON DELETE CASCADE,
   broker_symbol_id   UUID NOT NULL REFERENCES broker_symbols(id),
   idempotency_key    TEXT NOT NULL UNIQUE,
+  provider_order_id  TEXT,
   broker_ticket      TEXT,
   side               TEXT NOT NULL CHECK (side IN ('buy','sell')),
   volume             NUMERIC(12,4) NOT NULL,
@@ -251,6 +267,7 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS provider_order_id TEXT;
 CREATE INDEX IF NOT EXISTS orders_bot_idx ON orders (bot_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS orders_account_idx ON orders (broker_account_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS orders_status_idx ON orders (status);

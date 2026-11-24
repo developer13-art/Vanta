@@ -1,6 +1,8 @@
 import { query, withTransaction } from './db';
 import { logger } from './logger';
 import { fetchOpenPositions } from './metaapi';
+import { fetchBrokerPositions, resolveFxApisOrder, submitBrokerMarketOrder } from './broker-providers';
+import type { BrokerProvider } from '../shared/types';
 import { chargeOrderClose } from './billing';
 
 /**
@@ -12,14 +14,17 @@ import { chargeOrderClose } from './billing';
  */
 export async function reconcileBrokerAccount(brokerAccountId: string): Promise<void> {
   const acc = await query<{
-    id: string; user_id: string; metaapi_account_id: string;
-  }>(`SELECT id, user_id, metaapi_account_id FROM broker_accounts WHERE id = $1`, [brokerAccountId]);
+    id: string; user_id: string; connection_provider: BrokerProvider; provider_account_id: string;
+  }>(`SELECT id, user_id, connection_provider, provider_account_id FROM broker_accounts WHERE id = $1`, [brokerAccountId]);
   const account = acc.rows[0];
   if (!account) return;
 
-  let brokerPositions: Array<{ id: string; symbol: string; volume: number; type: string; openPrice: number }>;
+  let brokerPositions: Array<{
+    id: string; symbol: string; side: 'buy' | 'sell'; volume: number; openPrice: number;
+    currentPrice: number | null; profit: number | null;
+  }>;
   try {
-    brokerPositions = await fetchOpenPositions(account.metaapi_account_id);
+    brokerPositions = await fetchBrokerPositions(account.connection_provider, account.provider_account_id);
   } catch (err) {
     logger.warn({ err, brokerAccountId }, 'Reconciliation: broker fetch failed');
     return;
@@ -98,7 +103,7 @@ export async function reconcileBrokerAccount(brokerAccountId: string): Promise<v
        ON CONFLICT (broker_account_id, broker_ticket) DO NOTHING`,
       [
         botId, brokerAccountId, symbolId, ticket,
-        bp.type === 'POSITION_TYPE_BUY' ? 'buy' : 'sell',
+        bp.side,
         bp.volume, bp.openPrice,
       ],
     );
@@ -108,11 +113,13 @@ export async function reconcileBrokerAccount(brokerAccountId: string): Promise<v
 export async function reconcileOrder(orderId: string): Promise<void> {
   const res = await query<{
     id: string; broker_ticket: string | null; broker_account_id: string;
-    idempotency_key: string; status: string; side: string; volume: number;
-    broker_symbol: string; metaapi_account_id: string; user_id: string; bot_id: string;
+    idempotency_key: string; status: string; side: 'buy' | 'sell'; volume: number;
+    broker_symbol: string; connection_provider: BrokerProvider; provider_account_id: string;
+    provider_order_id: string | null; user_id: string; bot_id: string;
   }>(
     `SELECT o.id, o.broker_ticket, o.broker_account_id, o.idempotency_key, o.status,
-            o.side, o.volume, s.broker_symbol, b.metaapi_account_id, b.user_id, o.bot_id
+            o.side, o.volume, s.broker_symbol, b.connection_provider, b.provider_account_id,
+            o.provider_order_id, b.user_id, o.bot_id
        FROM orders o
        JOIN broker_symbols s ON s.id = o.broker_symbol_id
        JOIN broker_accounts b ON b.id = o.broker_account_id
@@ -122,20 +129,62 @@ export async function reconcileOrder(orderId: string): Promise<void> {
   const order = res.rows[0];
   if (!order || order.status !== 'unknown') return;
 
-  const positions = await fetchOpenPositions(order.metaapi_account_id);
-  const match = positions.find((p) =>
-    // MetaApi may return position with comment carrying our order id in clientId
-    (p as unknown as { clientId?: string }).clientId === order.id,
-  );
+  let match: { id: string; volume: number; openPrice: number } | undefined;
+  let providerOrderId: string | null = order.provider_order_id;
+  if (order.connection_provider === 'fxapis') {
+    const result = providerOrderId
+      ? await resolveFxApisOrder(order.provider_account_id, providerOrderId)
+      : await submitBrokerMarketOrder(
+        'fxapis',
+        order.provider_account_id,
+        {
+          symbol: order.broker_symbol,
+          side: order.side,
+          volume: order.volume,
+          comment: `vanta:${order.id}`,
+          clientId: order.id,
+        },
+        order.idempotency_key,
+      );
+    providerOrderId = result.providerOrderId ?? providerOrderId;
+    if (result.status === 'unknown') {
+      await query(`UPDATE orders SET provider_order_id=COALESCE($2, provider_order_id), broker_response=$3 WHERE id=$1`, [
+        order.id, providerOrderId, JSON.stringify({ status: 'unknown', message: result.message }),
+      ]);
+      throw new Error('FXAPIs has not resolved this order yet.');
+    }
+    if (result.status === 'rejected') {
+      await query(
+        `UPDATE orders SET status='rejected', provider_order_id=COALESCE($2, provider_order_id),
+                broker_response=$3, rejection_reason=$4, acknowledged_at=now()
+          WHERE id=$1`,
+        [order.id, providerOrderId, JSON.stringify(result), result.message ?? 'rejected'],
+      );
+      logger.info({ orderId }, 'Reconciled FXAPIs order as rejected');
+      return;
+    }
+    if (!result.ticket) throw new Error('FXAPIs confirmed an order without a broker position ticket.');
+    match = { id: result.ticket, volume: result.volume || order.volume, openPrice: result.price };
+  } else {
+    const positions = await fetchOpenPositions(order.provider_account_id);
+    const metaApiMatch = positions.find((position) =>
+      (position as unknown as { clientId?: string }).clientId === order.id,
+    );
+    if (metaApiMatch) {
+      match = { id: String(metaApiMatch.id), volume: metaApiMatch.volume, openPrice: metaApiMatch.openPrice };
+    }
+  }
 
   if (match) {
     await withTransaction(async (client) => {
       await client.query(
         `UPDATE orders
-            SET status='accepted', broker_ticket=$2, filled_price=$3,
+            SET status='accepted', broker_ticket=$2, provider_order_id=COALESCE($4, provider_order_id),
+                broker_response=COALESCE(broker_response, '{}'::jsonb) || $5::jsonb, filled_price=$3,
                 acknowledged_at=now(), filled_at=now()
           WHERE id=$1`,
-        [orderId, String(match.id), match.openPrice],
+        [orderId, String(match.id), match.openPrice, providerOrderId,
+          JSON.stringify({ status: 'accepted', brokerPositionId: String(match.id) })],
       );
       await client.query(
         `INSERT INTO positions

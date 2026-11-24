@@ -120,7 +120,9 @@ export function Brokers(): JSX.Element {
                 <span className={`broker-status ${statusClass(broker.status)}`}><i />{statusLabel(broker.status)}</span>
                 <span className={`broker-mode broker-mode-${broker.mode}`}>{broker.mode}</span>
               </div>
-              <div className="broker-account-identity"><h3>{broker.label}</h3><p>{broker.broker_name} · {broker.server}</p><small>Login {broker.login}</small></div>
+              <div className="broker-account-identity"><h3>{broker.label}</h3><p>{broker.broker_name} · {broker.server}</p><small>
+                {broker.platform?.toUpperCase() ?? 'Platform'} · {broker.connection_provider === 'fxapis' ? 'FXAPIs' : 'MetaApi'} · Login {broker.login}
+              </small></div>
               <div className="broker-account-values">
                 <div><span>Balance</span><strong>{formatAmount(broker.account_balance, broker.account_currency)}</strong></div>
                 <div><span>Equity</span><strong>{formatAmount(broker.account_equity, broker.account_currency)}</strong></div>

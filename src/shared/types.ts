@@ -2,6 +2,8 @@
 // These MUST match what the server returns (see src/server/routes/*).
 
 export type BrokerMode = 'demo' | 'live';
+export type BrokerProvider = 'metaapi' | 'fxapis';
+export type BrokerPlatform = 'mt4' | 'mt5';
 
 export type BrokerStatus =
   | 'not_connected' | 'connecting' | 'provisioning' | 'deploying'
@@ -63,6 +65,8 @@ export interface LoginResponse {
 export interface BrokerAccount {
   id: string;
   label: string;
+  connection_provider: BrokerProvider;
+  platform: BrokerPlatform | null;
   broker_name: string;
   server: string;
   login: string;

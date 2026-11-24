@@ -1806,6 +1806,10 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .broker-platform-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; margin-bottom: 11px; }
 .broker-platform-option { display: flex; align-items: center; gap: 9px; min-height: 55px; padding: 9px; border: 1px solid #2b3844; border-radius: 7px; background: #0a1119; color: #c2ccd6; text-align: left; cursor: pointer; }
 .broker-platform-option.is-selected, .broker-mode-options button.is-selected { border-color: #b99940; background: rgba(198, 159, 49, .08); }
+.broker-provider-select { display: grid; gap: 5px; margin: 0 0 12px; color: #b8c2cd; font-size: 8px; }
+.broker-provider-select select { width: 100%; padding: 8px; border: 1px solid #2b3844; border-radius: 6px; background: #0a1119; color: #e9eef3; font: inherit; }
+.broker-provider-select select:disabled { opacity: .8; }
+.broker-provider-select small { color: #82909d; font-size: 7px; line-height: 1.5; }
 .broker-platform-mark { display: grid; width: 34px; height: 31px; place-items: center; border-radius: 5px; background: #172432; color: #e4c15b; font-size: 8px; font-weight: 800; }
 .broker-platform-option strong, .broker-platform-option small { display: block; }
 .broker-platform-option strong, .broker-mode-options strong { color: #dce3e9; font-size: 9px; }

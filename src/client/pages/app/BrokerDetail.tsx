@@ -41,6 +41,7 @@ export function BrokerDetail(): JSX.Element {
         <h1 className="page-title" style={{ marginBottom: 0 }}>{broker.label}</h1>
         <div style={{ display: 'flex', gap: 8 }}>
           <Badge kind={broker.mode === 'live' ? 'danger' : 'info'}>{broker.mode}</Badge>
+          <Badge kind="info">{broker.platform?.toUpperCase() ?? 'Platform'} · {broker.connection_provider === 'fxapis' ? 'FXAPIs' : 'MetaApi'}</Badge>
           <Badge kind={broker.status === 'connected' ? 'success' : 'warn'}>{broker.status}</Badge>
         </div>
       </div>

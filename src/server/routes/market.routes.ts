@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db';
 import { requireAuth } from '../middleware';
-import { fetchCandles } from '../metaapi';
+import { fetchBrokerCandles } from '../broker-providers';
 import { Errors } from '../errors';
 
 export const marketRouter = Router();
@@ -28,8 +28,8 @@ marketRouter.get('/symbols/:id/candles', requireAuth, async (req, res, next) => 
     const tf = (req.query.timeframe as string) ?? '15m';
     if (!['1m', '5m', '15m', '1h'].includes(tf)) throw Errors.badRequest('Invalid timeframe');
 
-    const sym = await query<{ metaapi_account_id: string; broker_symbol: string }>(
-      `SELECT ba.metaapi_account_id, s.broker_symbol
+    const sym = await query<{ connection_provider: 'metaapi' | 'fxapis'; provider_account_id: string; broker_symbol: string }>(
+      `SELECT ba.connection_provider, ba.provider_account_id, s.broker_symbol
          FROM broker_symbols s
          JOIN broker_accounts ba ON ba.id = s.broker_account_id
         WHERE s.id = $1 AND ba.user_id = $2`,
@@ -37,8 +37,9 @@ marketRouter.get('/symbols/:id/candles', requireAuth, async (req, res, next) => 
     );
     if (!sym.rows[0]) throw Errors.notFound();
 
-    const candles = await fetchCandles(
-      sym.rows[0].metaapi_account_id,
+    const candles = await fetchBrokerCandles(
+      sym.rows[0].connection_provider,
+      sym.rows[0].provider_account_id,
       sym.rows[0].broker_symbol,
       tf as '1m' | '5m' | '15m' | '1h',
       100,
