@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiRequestError } from '../../api';
 import { Icon } from '../../components/Icon';
-import type { BrokerSymbol, Candle } from '../../../shared/types';
+import type { BrokerAccount, BrokerSymbol, Candle } from '../../../shared/types';
 
 const CATEGORIES = [
   { value: 'all', label: 'All markets' },
@@ -103,12 +103,14 @@ export function Markets(): JSX.Element {
   const [searchParams] = useSearchParams();
   const [category, setCategory] = useState('all');
   const [search, setSearch] = useState(searchParams.get('search') ?? '');
+  const [brokerAccounts, setBrokerAccounts] = useState<BrokerAccount[]>([]);
   const [symbols, setSymbols] = useState<BrokerSymbol[]>([]);
   const [selectedSymbolId, setSelectedSymbolId] = useState('');
   const [timeframe, setTimeframe] = useState<Timeframe>('15m');
   const [candleRetry, setCandleRetry] = useState(0);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loadingSymbols, setLoadingSymbols] = useState(true);
+  const [discoveringSymbols, setDiscoveringSymbols] = useState(false);
   const [loadingCandles, setLoadingCandles] = useState(false);
   const [symbolsError, setSymbolsError] = useState<string | null>(null);
   const [candlesError, setCandlesError] = useState<string | null>(null);
@@ -121,15 +123,46 @@ export function Markets(): JSX.Element {
     let active = true;
     setLoadingSymbols(true);
     setSymbolsError(null);
-    api.listSymbols().then((items) => {
-      if (!active) return;
-      setSymbols(items);
-      setSelectedSymbolId((current) => items.some((item) => item.id === current) ? current : (items[0]?.id ?? ''));
-    }).catch((error: unknown) => {
-      if (active) setSymbolsError(error instanceof ApiRequestError ? error.message : 'Markets could not be loaded.');
-    }).finally(() => {
-      if (active) setLoadingSymbols(false);
-    });
+    setDiscoveringSymbols(false);
+    void (async () => {
+      try {
+        let items = await api.listSymbols();
+        if (!active) return;
+
+        if (items.length === 0) {
+          const accounts = await api.listBrokers();
+          if (!active) return;
+          setBrokerAccounts(accounts);
+          const connectedAccounts = accounts.filter((account) => account.status === 'connected');
+
+          if (connectedAccounts.length > 0) {
+            setDiscoveringSymbols(true);
+            const discoveryErrors: unknown[] = [];
+            for (const account of connectedAccounts) {
+              if (!active) return;
+              try {
+                await api.discoverSymbols(account.id);
+              } catch (error) {
+                discoveryErrors.push(error);
+              }
+            }
+            items = await api.listSymbols();
+            if (items.length === 0 && discoveryErrors.length > 0) throw discoveryErrors[0];
+          }
+        }
+
+        if (!active) return;
+        setSymbols(items);
+        setSelectedSymbolId((current) => items.some((item) => item.id === current) ? current : (items[0]?.id ?? ''));
+      } catch (error: unknown) {
+        if (active) setSymbolsError(error instanceof ApiRequestError ? error.message : 'Markets could not be loaded.');
+      } finally {
+        if (active) {
+          setDiscoveringSymbols(false);
+          setLoadingSymbols(false);
+        }
+      }
+    })();
     return () => { active = false; };
   };
 
@@ -230,7 +263,7 @@ export function Markets(): JSX.Element {
           </div>
 
           {loadingSymbols ? (
-            <div className="markets-empty-state"><span className="dashboard-spinner" /> Loading broker instruments…</div>
+            <div className="markets-empty-state"><span className="dashboard-spinner" /> {discoveringSymbols ? 'Discovering instruments from connected accounts…' : 'Loading broker instruments…'}</div>
           ) : symbolsError ? (
             <div className="markets-empty-state" role="alert">
               <strong>Markets unavailable</strong><p>{symbolsError}</p><button type="button" className="markets-retry" onClick={loadSymbols}>Try again</button>
@@ -238,9 +271,26 @@ export function Markets(): JSX.Element {
           ) : symbols.length === 0 ? (
             <div className="markets-empty-state">
               <span className="markets-empty-icon"><Icon name="markets" size={22} /></span>
-              <strong>No instruments discovered yet</strong>
-              <p>Connect a broker account, then discover its available symbols to populate your market workspace.</p>
-              <Link to="/app/brokers/new">Connect a broker <Icon name="arrow-right" size={14} /></Link>
+              {brokerAccounts.length === 0 ? (
+                <>
+                  <strong>No broker accounts connected</strong>
+                  <p>Connect a broker account to discover instruments for your market workspace.</p>
+                  <Link to="/app/brokers/new">Connect a broker <Icon name="arrow-right" size={14} /></Link>
+                </>
+              ) : brokerAccounts.some((account) => account.status === 'connected') ? (
+                <>
+                  <strong>No instruments discovered yet</strong>
+                  <p>Your connected account has no saved instruments. Try discovering its available symbols again.</p>
+                  <button type="button" className="markets-retry" onClick={loadSymbols}>Discover symbols</button>
+                </>
+              ) : (
+                <>
+                  <strong>Broker account is not ready yet</strong>
+                  <p>Markets will populate after a broker account finishes connecting.</p>
+                  <Link to="/app/brokers">View broker accounts <Icon name="arrow-right" size={14} /></Link>
+                  <button type="button" className="markets-retry" onClick={loadSymbols}>Check again</button>
+                </>
+              )}
             </div>
           ) : visibleSymbols.length === 0 ? (
             <div className="markets-empty-state"><strong>No matching instruments</strong><p>Try a different search or category.</p></div>
