@@ -136,7 +136,7 @@ export function BrokerAdd(): JSX.Element {
               <Input label="Account login" required value={form.login} onChange={(event) => set('login', event.target.value)} placeholder="Trading account number" />
               <Input label="Trading password" type="password" required value={form.password} onChange={(event) => set('password', event.target.value)} placeholder="Trading password" autoComplete="new-password" />
             </div>
-            <p className="broker-connect-hint">Use your trading password—not your broker website password. Find the exact server name in your broker’s account details.</p>
+            <p className="broker-connect-hint">Use your MT5 trading/master password—not an investor or broker website password. Investor passwords are read-only. Find the exact server name in your broker’s account details.</p>
           </section>
 
           <div className="broker-connect-security"><Icon name="shield" size={19} /><p>

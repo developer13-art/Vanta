@@ -2019,6 +2019,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .dashboard-welcome .gold-button { min-height: 30px; padding: 0 11px; border-radius: 8px; font-size: 9px; }
 .dashboard-account-overview { min-width: 0; padding: 14px; border-color: #242f3a; background: radial-gradient(ellipse at 100% 0, rgba(0, 190, 132, .09), transparent 54%), linear-gradient(145deg, #101821, #090e14); }
 .dashboard-mobile-account-overview { display: none; }
+.dashboard-mobile-bots { display: none; }
 .dashboard-account-overview .dashboard-section-heading { min-height: 29px; margin-bottom: 3px; }
 .dashboard-account-overview .dashboard-section-heading h2 { font-size: 12px; }
 .dashboard-account-overview .dashboard-section-heading p { font-size: 8px; }
@@ -2065,6 +2066,10 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .market-panel .market-symbol-copy small { font-size: 7px; }
 .market-row-state { display: flex; flex: 0 0 auto; align-items: flex-end; flex-direction: column; gap: 2px; color: #41cfa2; font-size: 7px; }
 .market-row-state small { color: #d6b64b; font-size: 6px; }
+.market-trading-warning { display: flex; align-items: flex-start; gap: 7px; margin: 0 0 8px; padding: 8px; border: 1px solid #55451e; border-radius: 7px; background: rgba(67, 52, 18, .34); color: #e0c779; font-size: 8px; line-height: 1.5; }
+.market-trading-warning svg { flex: 0 0 auto; margin-top: 1px; }
+.market-trading-warning p { margin: 0; }
+.market-trading-warning a { color: #f0cc57; font-weight: 700; }
 .market-data-note { margin: 7px 0 0; color: #687684; font-size: 7px; line-height: 1.4; }
 .market-filter-empty { display: grid; min-height: 155px; place-items: center; color: #7d8996; font-size: 8px; }
 .market-panel .dashboard-empty { min-height: 160px; }
@@ -2194,6 +2199,18 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   .dashboard-mobile-account-overview .account-overview-values { gap: 5px; padding-top: 8px; }
   .dashboard-mobile-account-overview .account-overview-values span { font-size: 8px; }
   .dashboard-mobile-account-overview .account-overview-values strong { font-size: 10px; }
+  .dashboard-mobile-bots { display: block; padding: 10px; }
+  .dashboard-mobile-bots .dashboard-section-heading h2 { font-size: 10px; }
+  .dashboard-mobile-bots .dashboard-section-heading p,
+  .dashboard-mobile-bots .text-link { font-size: 7px; }
+  .dashboard-mobile-bots .bot-row { min-height: 48px; gap: 7px; }
+  .dashboard-mobile-bots .bot-avatar { width: 31px; height: 31px; }
+  .dashboard-mobile-bots .bot-info strong { font-size: 9px; }
+  .dashboard-mobile-bots .bot-info small { font-size: 7px; }
+  .dashboard-mobile-bots .bot-state { padding: 3px 6px; font-size: 7px; }
+  .dashboard-mobile-bots .dashboard-empty p { font-size: 8px; }
+  .dashboard-mobile-bots .dashboard-empty > a { font-size: 8px; }
+  .market-trading-warning { font-size: 7px; }
   .dashboard-mobile-finance { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; }
   .mobile-finance-credit, .mobile-finance-pnl { display: flex; min-height: 66px; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid #27333e; border-radius: 9px; background: linear-gradient(115deg, #111922, #0b1118); }
   .mobile-finance-credit { border-color: #53441a; background: radial-gradient(ellipse at 85% 50%, rgba(220, 166, 25, .2), transparent 48%), linear-gradient(115deg, #19170f, #0e141b); }

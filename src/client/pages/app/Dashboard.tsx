@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api';
 import { useAuth } from '../../auth-context';
 import { Icon } from '../../components/Icon';
+import { BotStateBadge } from '../../components/BotStateBadge';
 import type {
   AnalyticsSummary, BotSummary, BrokerAccount, BrokerSymbol, DailyPnl,
   Notification, Position, Wallet,
@@ -250,6 +251,8 @@ function Dashboard(): JSX.Element {
     if (marketFilter === 'more') return getMarketGroup(symbol.category) === 'more';
     return getMarketGroup(symbol.category) === marketFilter;
   }).slice(0, 5);
+  const visibleSymbolsAllReadOnly = visibleSymbols.length > 0 && visibleSymbols.every((symbol) => !symbol.is_tradable);
+  const dashboardBots = [...runningBots, ...bots.filter((bot) => bot.state !== 'running')].slice(0, 3);
   const latestNotification = notifications[0];
   const notificationCount = notifications.length > 5 ? '5+' : String(notifications.length);
   const pnlUnavailable = performanceError || pnlCurrencyUnavailable;
@@ -365,6 +368,32 @@ function Dashboard(): JSX.Element {
         {!connectedBrokers.length && <Link to="/app/brokers/new" className="account-connect-link">Connect an account <Icon name="arrow-right" size={13} /></Link>}
       </section>
 
+      <section className="dashboard-mobile-bots dashboard-panel bots-panel" aria-label="AI bots">
+        <div className="dashboard-section-heading">
+          <div><h2>AI Bots</h2><p>{runningBots.length} running · {bots.length} total</p></div>
+          <Link to="/app/bots" className="text-link">View all <Icon name="arrow-right" size={13} /></Link>
+        </div>
+        {dashboardBots.length === 0 ? (
+          <div className="dashboard-empty compact-empty">
+            <p>No bots yet. Create a bot to start building your trading workspace.</p>
+            <Link to="/app/bots/new">Create an AI bot <Icon name="arrow-right" size={13} /></Link>
+          </div>
+        ) : (
+          <div className="bot-list">
+            {dashboardBots.map((bot) => (
+              <div className="bot-row" key={bot.id}>
+                <span className={`bot-avatar${bot.state === 'running' ? ' bot-avatar-active' : ''}`}><Icon name="bot" size={18} /></span>
+                <span className="bot-info">
+                  <strong>{bot.name}</strong>
+                  <small>{bot.strategy_name}<i />{bot.open_positions} open position{bot.open_positions === 1 ? '' : 's'}</small>
+                </span>
+                <BotStateBadge state={bot.state} />
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="dashboard-metrics" aria-label="Account summary">
         <article className="dashboard-stat-card dashboard-panel desktop-stat">
           <span className="metric-icon gold-icon"><Icon name="credits" size={22} /></span>
@@ -417,6 +446,12 @@ function Dashboard(): JSX.Element {
               <button type="button" aria-pressed={marketFilter === value} className={marketFilter === value ? 'selected' : ''} key={value} onClick={() => setMarketFilter(value)}>{label}</button>
             ))}
           </div>
+          {visibleSymbolsAllReadOnly && (
+            <div className="market-trading-warning" role="status">
+              <Icon name="help" size={14} />
+              <p>Your broker reports these instruments as not tradable. Check that you connected with the MT5 trading password (not an investor password) and that trading is enabled for the account. <Link to="/app/brokers">Review account</Link></p>
+            </div>
+          )}
           {symbols.length === 0 ? (
             <div className="dashboard-empty">
               <span className="metric-icon gold-icon"><Icon name="markets" size={20} /></span>
