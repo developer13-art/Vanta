@@ -2018,6 +2018,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .welcome-connection.is-connected i { background: #24d89b; box-shadow: 0 0 7px rgba(36, 216, 155, .6); }
 .dashboard-welcome .gold-button { min-height: 30px; padding: 0 11px; border-radius: 8px; font-size: 9px; }
 .dashboard-account-overview { min-width: 0; padding: 14px; border-color: #242f3a; background: radial-gradient(ellipse at 100% 0, rgba(0, 190, 132, .09), transparent 54%), linear-gradient(145deg, #101821, #090e14); }
+.dashboard-mobile-account-overview { display: none; }
 .dashboard-account-overview .dashboard-section-heading { min-height: 29px; margin-bottom: 3px; }
 .dashboard-account-overview .dashboard-section-heading h2 { font-size: 12px; }
 .dashboard-account-overview .dashboard-section-heading p { font-size: 8px; }
@@ -2183,6 +2184,16 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   .welcome-connection { margin-bottom: 6px; font-size: 7px; }
   .dashboard-welcome .gold-button { min-height: 27px; font-size: 8px; }
   .dashboard-account-overview { display: none; }
+  .dashboard-mobile-account-overview { display: block; padding: 11px; }
+  .dashboard-mobile-account-overview .dashboard-section-heading h2 { font-size: 11px; }
+  .dashboard-mobile-account-overview .dashboard-section-heading p,
+  .dashboard-mobile-account-overview .text-link { font-size: 8px; }
+  .dashboard-mobile-account-overview .account-equity-main > span { font-size: 9px; }
+  .dashboard-mobile-account-overview .account-equity-main > strong { font-size: 21px; }
+  .dashboard-mobile-account-overview .account-equity-main > small { font-size: 8px; }
+  .dashboard-mobile-account-overview .account-overview-values { gap: 5px; padding-top: 8px; }
+  .dashboard-mobile-account-overview .account-overview-values span { font-size: 8px; }
+  .dashboard-mobile-account-overview .account-overview-values strong { font-size: 10px; }
   .dashboard-mobile-finance { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; }
   .mobile-finance-credit, .mobile-finance-pnl { display: flex; min-height: 66px; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid #27333e; border-radius: 9px; background: linear-gradient(115deg, #111922, #0b1118); }
   .mobile-finance-credit { border-color: #53441a; background: radial-gradient(ellipse at 85% 50%, rgba(220, 166, 25, .2), transparent 48%), linear-gradient(115deg, #19170f, #0e141b); }

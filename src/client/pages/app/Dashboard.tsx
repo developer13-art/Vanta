@@ -347,6 +347,24 @@ function Dashboard(): JSX.Element {
         </article>
       </section>
 
+      <section className="dashboard-mobile-account-overview dashboard-account-overview dashboard-panel" aria-label="Account overview">
+        <div className="dashboard-section-heading">
+          <div><h2>Account Overview</h2><p>Broker-reported snapshot</p></div>
+          <Link to="/app/brokers" className="text-link">View details <Icon name="arrow-right" size={13} /></Link>
+        </div>
+        <div className="account-equity-main">
+          <span>Account equity</span>
+          <strong>{accountEquity === '—' ? '—' : `${accountEquity}${multipleAccountCurrencies ? '' : ` ${accountCurrencies[0] ?? ''}`}`}</strong>
+          <small>{equityCaption}</small>
+        </div>
+        <div className="account-overview-values">
+          <div><span>Balance</span><strong>{accountBalance === '—' || multipleAccountCurrencies ? accountBalance : `${accountBalance} ${accountCurrencies[0] ?? ''}`}</strong></div>
+          <div><span>Free margin</span><strong>{freeMargin === '—' || multipleAccountCurrencies ? freeMargin : `${freeMargin} ${accountCurrencies[0] ?? ''}`}</strong></div>
+          <div><span>Used margin</span><strong>{usedMargin === '—' || multipleAccountCurrencies ? usedMargin : `${usedMargin} ${accountCurrencies[0] ?? ''}`}</strong></div>
+        </div>
+        {!connectedBrokers.length && <Link to="/app/brokers/new" className="account-connect-link">Connect an account <Icon name="arrow-right" size={13} /></Link>}
+      </section>
+
       <section className="dashboard-metrics" aria-label="Account summary">
         <article className="dashboard-stat-card dashboard-panel desktop-stat">
           <span className="metric-icon gold-icon"><Icon name="credits" size={22} /></span>
