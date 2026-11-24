@@ -1,4 +1,5 @@
 import { env } from './env';
+import { logger } from './logger';
 import { FxApisError, closePosition as closeFxApisPosition, connectAccount as connectFxApisAccount,
   disconnectAccount as disconnectFxApisAccount, getAccountFigures, getAccountState,
   getCandles as getFxApisCandles, getOpenPositions as getFxApisPositions, getOrder as getFxApisOrder,
@@ -89,6 +90,12 @@ const FXAPIS_PENDING_STATES = new Set([
   'synchronizing', 'cooling', 'reconnecting',
 ]);
 
+function normalizeLeverage(provider: BrokerProvider, providerAccountId: string, value: number | null): number | null {
+  if (value === null || (Number.isSafeInteger(value) && value > 0)) return value;
+  logger.warn({ provider, providerAccountId, leverage: value }, 'Broker returned a non-integer leverage value; omitting it');
+  return null;
+}
+
 export function getBrokerProviderOptions(): {
   providers: BrokerProviderOption[];
   defaultProvider: BrokerProvider;
@@ -151,7 +158,7 @@ export async function getBrokerHealth(provider: BrokerProvider, providerAccountI
         usedMargin: info.usedMargin,
         marginLevel: info.marginLevel,
         currency: info.currency,
-        leverage: info.leverage,
+        leverage: normalizeLeverage(provider, providerAccountId, info.leverage),
         isHedging: info.isHedging,
       },
       detail: null,
@@ -161,7 +168,11 @@ export async function getBrokerHealth(provider: BrokerProvider, providerAccountI
   const accountState = await getAccountState(providerAccountId);
   if (FXAPIS_READY_STATES.has(accountState.state)) {
     const info = await getAccountFigures(providerAccountId);
-    return { status: 'connected', info, detail: accountState.detail };
+    return {
+      status: 'connected',
+      info: { ...info, leverage: normalizeLeverage(provider, providerAccountId, info.leverage) },
+      detail: accountState.detail,
+    };
   }
   if (accountState.state === 'standby') {
     return { status: 'connected', info: null, detail: 'FXAPIs account is idle and will reconnect when needed.' };

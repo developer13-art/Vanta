@@ -4,19 +4,22 @@ const state = vi.hoisted(() => ({
   env: { FXAPIS_API_KEY: 'fx_test_key', METAAPI_TOKEN: 'metaapi-token' },
   connectFxApisAccount: vi.fn().mockResolvedValue('fx-account'),
   provisionAccount: vi.fn().mockResolvedValue('meta-account'),
+  fetchAccountInformation: vi.fn(),
   placeMarketOrder: vi.fn(),
   getFxApisOrder: vi.fn(),
   getFxApisPositions: vi.fn(),
   getFxApisAccountState: vi.fn(),
+  getFxApisAccountFigures: vi.fn(),
 }));
 
 vi.mock('../src/server/env', () => ({ env: state.env }));
+vi.mock('../src/server/logger', () => ({ logger: { warn: vi.fn() } }));
 vi.mock('../src/server/fxapis', () => ({
   FxApisError: class FxApisError extends Error {},
   closePosition: vi.fn(),
   connectAccount: state.connectFxApisAccount,
   disconnectAccount: vi.fn(),
-  getAccountFigures: vi.fn(),
+  getAccountFigures: state.getFxApisAccountFigures,
   getAccountState: state.getFxApisAccountState,
   getCandles: vi.fn(),
   getOpenPositions: state.getFxApisPositions,
@@ -25,7 +28,7 @@ vi.mock('../src/server/fxapis', () => ({
   placeMarketOrder: state.placeMarketOrder,
 }));
 vi.mock('../src/server/metaapi', () => ({
-  fetchAccountInformation: vi.fn(),
+  fetchAccountInformation: state.fetchAccountInformation,
   fetchCandles: vi.fn(),
   fetchOpenPositions: vi.fn(),
   fetchSymbols: vi.fn(),
@@ -81,6 +84,17 @@ describe('broker provider selection', () => {
     state.getFxApisAccountState.mockResolvedValue({ state: 'standby', detail: null });
     await expect(getBrokerHealth('fxapis', 'fx-account'))
       .resolves.toMatchObject({ status: 'connected', info: null });
+  });
+
+  it('omits a non-integer broker leverage value before persisting account health', async () => {
+    state.getFxApisAccountState.mockResolvedValue({ state: 'ready', detail: null });
+    state.getFxApisAccountFigures.mockResolvedValue({
+      balance: 1000, equity: 1000, freeMargin: 1000, usedMargin: 0, marginLevel: null,
+      currency: 'USD', leverage: 18899.83, isHedging: true,
+    });
+
+    await expect(getBrokerHealth('fxapis', 'fx-account'))
+      .resolves.toMatchObject({ status: 'connected', info: { leverage: null } });
   });
 
   it('does not confirm FXAPIs orders without a real fill price and volume', async () => {
