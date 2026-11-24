@@ -25,6 +25,7 @@ const context = {
 describe('AI batch assessments', () => {
   beforeEach(() => {
     state.env.AI_ENABLED = true;
+    state.env.AI_PROVIDER_URL = 'https://ai.example.test/v1';
     state.fetch.mockReset();
     vi.stubGlobal('fetch', state.fetch);
   });
@@ -32,6 +33,7 @@ describe('AI batch assessments', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('accepts a complete, bounded decision batch', async () => {
+    state.env.AI_PROVIDER_URL = 'https://ai.example.test/v1/';
     state.fetch.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -56,6 +58,32 @@ describe('AI batch assessments', () => {
       confidence: 0.72,
       reasoning: 'Momentum is mixed.',
     }]);
+    expect(state.fetch.mock.calls[0]?.[0]).toBe('https://ai.example.test/v1/chat/completions');
+  });
+
+  it('accepts a full chat completions endpoint without appending it twice', async () => {
+    state.env.AI_PROVIDER_URL = 'https://ai.example.test/v1/chat/completions';
+    state.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              decisions: [{
+                symbol: 'EURUSD',
+                verdict: 'HOLD',
+                confidence: 0.72,
+                reasoning: 'Momentum is mixed.',
+              }],
+            }),
+          },
+        }],
+      }),
+    });
+
+    await getAiAssessments(context);
+
+    expect(state.fetch.mock.calls[0]?.[0]).toBe('https://ai.example.test/v1/chat/completions');
   });
 
   it('rejects an invalid or incomplete batch instead of permitting a trade', async () => {

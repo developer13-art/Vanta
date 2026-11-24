@@ -11,6 +11,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function getChatCompletionsUrl(providerUrl: string): string {
+  const normalizedUrl = providerUrl.replace(/\/+$/, '');
+  return normalizedUrl.endsWith('/chat/completions')
+    ? normalizedUrl
+    : `${normalizedUrl}/chat/completions`;
+}
+
 export function isAiEnabled(): boolean {
   return env.AI_ENABLED;
 }
@@ -25,7 +32,7 @@ export async function getAiAssessments(context: {
     throw new Error('AI assessment is disabled or not configured');
   }
 
-  const response = await fetch(`${env.AI_PROVIDER_URL}/chat/completions`, {
+  const response = await fetch(getChatCompletionsUrl(env.AI_PROVIDER_URL), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -52,7 +59,10 @@ export async function getAiAssessments(context: {
     signal: AbortSignal.timeout(env.AI_TIMEOUT_MS),
   });
 
-  if (!response.ok) throw new Error(`AI request failed: ${response.status}`);
+  if (!response.ok) {
+    const hint = response.status === 404 ? ' Check AI_PROVIDER_URL and AI_MODEL.' : '';
+    throw new Error(`AI request failed: ${response.status}.${hint}`);
+  }
   const responseBody: unknown = await response.json();
   if (!isRecord(responseBody) || !Array.isArray(responseBody.choices)) {
     throw new Error('AI response is missing choices');
