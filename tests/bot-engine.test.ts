@@ -163,11 +163,11 @@ describe('bot analysis ticks', () => {
       status: 'connected',
       detail: null,
       info: {
-        balance: 1000,
-        equity: 1000,
-        freeMargin: 1000,
-        usedMargin: 0,
-        marginLevel: 1000,
+        balance: 1000.38,
+        equity: 1000.25,
+        freeMargin: 1000.12,
+        usedMargin: 0.13,
+        marginLevel: 1000.5,
         currency: 'USD',
         leverage: 100,
         isHedging: true,
@@ -184,5 +184,8 @@ describe('bot analysis ticks', () => {
     }));
     const decisionInsert = state.query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO ai_decisions'));
     expect(decisionInsert?.[1]).toEqual(expect.arrayContaining(['BUY']));
+    const baselineUpdate = state.query.mock.calls.find(([sql]) => String(sql).includes('SET peak_equity='));
+    expect(String(baselineUpdate?.[0])).toContain('COALESCE($2::numeric, 0::numeric)');
+    expect(baselineUpdate?.[1]).toEqual(['bot-1', 1000.25, 1000.38]);
   });
 });

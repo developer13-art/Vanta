@@ -301,9 +301,13 @@ export async function runBotTick(botId: string): Promise<void> {
     );
     const riskBaseline = await query<{ peak_equity: string; daily_start_balance: string }>(
       `UPDATE bots
-          SET peak_equity=GREATEST(peak_equity, COALESCE($2, 0), COALESCE($3, 0)),
+          SET peak_equity=GREATEST(
+                peak_equity,
+                COALESCE($2::numeric, 0::numeric),
+                COALESCE($3::numeric, 0::numeric)
+              ),
               daily_start_balance=CASE
-                WHEN $3::numeric IS NOT NULL AND daily_balance_date IS DISTINCT FROM CURRENT_DATE THEN $3
+                WHEN $3::numeric IS NOT NULL AND daily_balance_date IS DISTINCT FROM CURRENT_DATE THEN $3::numeric
                 ELSE daily_start_balance
               END,
               daily_balance_date=CASE
