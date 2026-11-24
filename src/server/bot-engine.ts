@@ -200,12 +200,13 @@ async function saveNoTrade(
   details: Record<string, unknown> = {},
 ): Promise<void> {
   const text = reasonText(reason);
+  const detail = typeof details.detail === 'string' ? details.detail.trim() : '';
   await saveDecision({
     bot,
     instrument,
     candleTime,
     signal: { verdict: 'NO_TRADE', confidence: 0, reason, meta: details },
-    summary: text,
+    summary: detail ? `${text} ${detail}`.slice(0, 500) : text,
     riskOutcome: 'rejected',
     riskReason: reason,
   });

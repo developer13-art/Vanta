@@ -115,6 +115,21 @@ describe('FXAPIs integration', () => {
     ]);
   });
 
+  it('retries one transient scheduler failure while warming an account', async () => {
+    state.fetch
+      .mockResolvedValueOnce(response({ data: { state: 'standby' } }))
+      .mockResolvedValueOnce(response({
+        error: { code: 'SCHEDULER_FAILED', message: 'Could not bring this account online. Try again shortly.' },
+      }, 503))
+      .mockResolvedValueOnce(response({ data: { state: 'starting' } }, 202))
+      .mockResolvedValueOnce(response({ data: { state: 'ready' } }))
+      .mockResolvedValueOnce(response({ data: { candles: [] } }));
+
+    await expect(getCandles('fx-account-1', 'XAUUSD', '1m', 10)).resolves.toEqual([]);
+
+    expect(state.fetch.mock.calls.map(([url]) => String(url)).filter((url) => url.endsWith('/warm'))).toHaveLength(2);
+  });
+
   it('reads broker quotes with spread and current trade permissions', async () => {
     state.fetch.mockResolvedValueOnce(response({
       data: [{

@@ -99,7 +99,7 @@ export async function connectAccount(args: {
     throw new FxApisError('FXAPIs did not return an account ID.', 502, 'INVALID_RESPONSE');
   }
   try {
-    await requestData(`/v1/accounts/${encodeURIComponent(data.id)}/warm`, { method: 'POST', body: {} });
+    await requestWarm(data.id);
   } catch (error) {
     try {
       await disconnectAccount(data.id);
@@ -119,6 +119,19 @@ export async function getAccountState(accountId: string): Promise<{ state: strin
   const data = requireRecord(await requestData(`/v1/accounts/${encodeURIComponent(accountId)}/status`));
   if (typeof data.state !== 'string') throw new FxApisError('FXAPIs returned incomplete account status.', 502, 'INVALID_RESPONSE');
   return { state: data.state, detail: typeof data.detail === 'string' ? data.detail : null };
+}
+
+async function requestWarm(accountId: string): Promise<void> {
+  const path = `/v1/accounts/${encodeURIComponent(accountId)}/warm`;
+  const request = () => requestData(path, { method: 'POST', body: {} });
+  try {
+    await request();
+  } catch (error) {
+    if (!(error instanceof FxApisError) || error.status !== 503 || error.code !== 'SCHEDULER_FAILED') throw error;
+    logger.warn({ accountId, code: error.code }, 'FXAPIs warm request failed temporarily; retrying once');
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await request();
+  }
 }
 
 const ONLINE_ACCOUNT_STATES = new Set(['ready', 'executing', 'degraded']);
@@ -141,7 +154,7 @@ async function bringAccountOnline(accountId: string): Promise<void> {
 
   let warmRequested = false;
   if (WARMABLE_ACCOUNT_STATES.has(accountState.state)) {
-    await requestData(`/v1/accounts/${encodeURIComponent(accountId)}/warm`, { method: 'POST', body: {} });
+    await requestWarm(accountId);
     warmRequested = true;
   }
 
@@ -158,7 +171,7 @@ async function bringAccountOnline(accountId: string): Promise<void> {
       );
     }
     if (!warmRequested && WARMABLE_ACCOUNT_STATES.has(accountState.state)) {
-      await requestData(`/v1/accounts/${encodeURIComponent(accountId)}/warm`, { method: 'POST', body: {} });
+      await requestWarm(accountId);
       warmRequested = true;
     }
   }
