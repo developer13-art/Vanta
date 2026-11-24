@@ -206,6 +206,23 @@ function Dashboard(): JSX.Element {
 
   useEffect(() => {
     let active = true;
+    const refreshBots = async () => {
+      try {
+        const latestBots = await api.listBots();
+        if (active) setBots(latestBots);
+      } catch {
+        if (active) setLoadError(true);
+      }
+    };
+    const timer = window.setInterval(() => { void refreshBots(); }, 15_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     setPerformanceLoading(true);
     setPerformanceError(false);
     Promise.allSettled([api.getAnalyticsSummary(days), api.getDailyPnl(days)]).then(([summaryResult, dailyResult]) => {
@@ -386,6 +403,7 @@ function Dashboard(): JSX.Element {
                 <span className="bot-info">
                   <strong>{bot.name}</strong>
                   <small>{bot.strategy_name}<i />{bot.open_positions} open position{bot.open_positions === 1 ? '' : 's'}</small>
+                  <small className="bot-feedback">{bot.last_decision_summary ?? (bot.state === 'running' ? 'Waiting for first analysis' : 'No analysis yet')}</small>
                 </span>
                 <BotStateBadge state={bot.state} />
               </div>

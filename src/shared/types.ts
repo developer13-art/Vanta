@@ -124,6 +124,9 @@ export interface BotSummary {
   started_at: string | null;
   stopped_at: string | null;
   last_run_at: string | null;
+  last_decision_verdict?: AiVerdict | null;
+  last_decision_summary?: string | null;
+  last_decision_at?: string | null;
   created_at: string;
   updated_at: string;
 }

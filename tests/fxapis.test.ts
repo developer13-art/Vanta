@@ -17,6 +17,7 @@ vi.mock('../src/server/logger', () => ({
 import {
   connectAccount,
   getCandles,
+  getQuotes,
   getSymbols,
   placeMarketOrder,
 } from '../src/server/fxapis';
@@ -112,6 +113,27 @@ describe('FXAPIs integration', () => {
       'https://api.fxapis.test/v1/accounts/fx-account-1/status',
       expect.stringContaining('/v1/accounts/fx-account-1/candles?'),
     ]);
+  });
+
+  it('reads broker quotes with spread and current trade permissions', async () => {
+    state.fetch.mockResolvedValueOnce(response({
+      data: [{
+        symbol: 'EURUSD.a',
+        status: 'ok',
+        bid: '1.08450',
+        ask: '1.08462',
+        spread: 12,
+        time: '2026-11-24T10:00:00Z',
+        stale: false,
+        marketOpen: true,
+        tradeMode: 'full',
+      }],
+    }));
+
+    await expect(getQuotes('fx-account-1', ['EURUSD.a'])).resolves.toMatchObject([
+      { symbol: 'EURUSD.a', status: 'ok', spreadPoints: 12, stale: false, marketOpen: true, tradeMode: 'full' },
+    ]);
+    expect(String(state.fetch.mock.calls[0]?.[0])).toContain('/v1/accounts/fx-account-1/quotes?symbols=EURUSD.a');
   });
 
   it('sends decimal-string volumes and idempotency keys for orders', async () => {

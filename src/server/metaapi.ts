@@ -161,6 +161,19 @@ export async function fetchOpenPositions(metaapiAccountId: string) {
   }
 }
 
+export async function fetchPrices(metaapiAccountId: string, symbols: string[]) {
+  const api = getMetaApiClient();
+  const account = await api.metatraderAccountApi.getAccount(metaapiAccountId);
+  const connection = account.getRPCConnection();
+  await connection.connect();
+  try {
+    await connection.waitSynchronized();
+    return await Promise.all(symbols.map((symbol) => connection.getSymbolPrice(symbol, true)));
+  } finally {
+    await connection.close();
+  }
+}
+
 export async function fetchCandles(
   metaapiAccountId: string,
   symbol: string,

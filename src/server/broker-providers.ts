@@ -2,11 +2,13 @@ import { env } from './env';
 import { FxApisError, closePosition as closeFxApisPosition, connectAccount as connectFxApisAccount,
   disconnectAccount as disconnectFxApisAccount, getAccountFigures, getAccountState,
   getCandles as getFxApisCandles, getOpenPositions as getFxApisPositions, getOrder as getFxApisOrder,
+  getQuotes as getFxApisQuotes,
   getSymbols as getFxApisSymbols, placeMarketOrder as placeFxApisMarketOrder } from './fxapis';
 import {
   fetchAccountInformation,
   fetchCandles,
   fetchOpenPositions,
+  fetchPrices,
   fetchSymbols,
   provisionAccount,
   submitMarketOrder,
@@ -44,6 +46,18 @@ export interface BrokerPositionSnapshot {
   openPrice: number;
   currentPrice: number | null;
   profit: number | null;
+}
+
+export interface BrokerLiveQuote {
+  symbol: string;
+  status: 'ok' | 'no_price' | 'unknown_symbol';
+  bid: number | null;
+  ask: number | null;
+  spreadPoints: number | null;
+  time: string | null;
+  stale: boolean;
+  marketOpen: boolean | null;
+  tradeMode: 'full' | 'longOnly' | 'shortOnly' | 'closeOnly' | 'disabled' | null;
 }
 
 export interface BrokerOrderRequest {
@@ -206,6 +220,35 @@ export async function fetchBrokerCandles(
 ): Promise<Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>> {
   if (provider === 'fxapis') return getFxApisCandles(providerAccountId, symbol, timeframe, limit);
   return fetchCandles(providerAccountId, symbol, timeframe, limit);
+}
+
+export async function fetchBrokerQuotes(
+  provider: BrokerProvider,
+  providerAccountId: string,
+  symbols: Array<{ symbol: string; digits: number | null }>,
+): Promise<BrokerLiveQuote[]> {
+  if (symbols.length === 0) return [];
+  if (provider === 'fxapis') return getFxApisQuotes(providerAccountId, symbols.map(({ symbol }) => symbol));
+
+  const prices = await fetchPrices(providerAccountId, symbols.map(({ symbol }) => symbol));
+  const now = Date.now();
+  return prices.map((price) => {
+    const digits = symbols.find(({ symbol }) => symbol === price.symbol)?.digits ?? 5;
+    const time = price.time instanceof Date ? price.time : new Date(price.time);
+    return {
+      symbol: price.symbol,
+      status: 'ok',
+      bid: price.bid,
+      ask: price.ask,
+      spreadPoints: Number.isFinite(price.bid) && Number.isFinite(price.ask)
+        ? Math.round((price.ask - price.bid) * 10 ** digits)
+        : null,
+      time: Number.isNaN(time.getTime()) ? null : time.toISOString(),
+      stale: Number.isNaN(time.getTime()) || now - time.getTime() > 60_000,
+      marketOpen: null,
+      tradeMode: null,
+    };
+  });
 }
 
 function mapFxApiOrder(order: Awaited<ReturnType<typeof placeFxApisMarketOrder>>): BrokerOrderResult {

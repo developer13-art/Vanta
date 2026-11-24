@@ -208,9 +208,16 @@ CREATE TABLE IF NOT EXISTS bots (
   started_at               TIMESTAMPTZ,
   stopped_at               TIMESTAMPTZ,
   last_run_at              TIMESTAMPTZ,
+  peak_equity              NUMERIC(18,2) NOT NULL DEFAULT 0,
+  daily_balance_date       DATE,
+  daily_start_balance      NUMERIC(18,2) NOT NULL DEFAULT 0,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS peak_equity NUMERIC(18,2) NOT NULL DEFAULT 0;
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS daily_balance_date DATE;
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS daily_start_balance NUMERIC(18,2) NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS bots_user_idx ON bots (user_id);
 CREATE INDEX IF NOT EXISTS bots_account_idx ON bots (broker_account_id);
@@ -447,6 +454,9 @@ CREATE INDEX IF NOT EXISTS jobs_pending_idx ON jobs (run_at)
 
 CREATE INDEX IF NOT EXISTS jobs_running_idx ON jobs (claimed_at)
   WHERE status = 'running';
+CREATE UNIQUE INDEX IF NOT EXISTS jobs_one_active_bot_tick_idx
+  ON jobs ((payload->>'botId'))
+  WHERE type = 'tick_analysis' AND status IN ('pending', 'running');
 
 -- ============================================================================
 -- 10. NOTIFICATIONS

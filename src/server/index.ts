@@ -7,6 +7,7 @@ import { reconcileBrokerAccount, reconcileOrder } from './reconciliation';
 import { getBrokerHealth } from './broker-providers';
 import { query } from './db';
 import { checkLowBalance, createNotification } from './notifications';
+import { runBotTick } from './bot-engine';
 
 // Register job handlers
 registerHandler('reconciliation', async (payload) => {
@@ -110,32 +111,8 @@ registerHandler('notification_dispatch', async (payload) => {
 });
 
 registerHandler('tick_analysis', async (payload) => {
-  const botId = String(payload.botId);
-  const res = await query<{
-    state: string; user_id: string; broker_account_id: string;
-    strategy_name: string; strategy_params: Record<string, unknown>;
-    lot_size: string; entry_batch_size: number; max_concurrent_positions: number;
-    daily_loss_limit: string; drawdown_limit: string; margin_utilization_limit: string;
-    max_spread_points: number | null; cooldown_seconds: number;
-    trading_sessions: Record<string, Array<[string, string]>> | null;
-  }>(
-    `SELECT b.state, b.user_id, b.broker_account_id,
-            sv.name AS strategy_name, b.strategy_params,
-            b.lot_size, b.entry_batch_size, b.max_concurrent_positions,
-            b.daily_loss_limit, b.drawdown_limit, b.margin_utilization_limit,
-            b.max_spread_points, b.cooldown_seconds, b.trading_sessions
-       FROM bots b
-       JOIN strategy_versions sv ON sv.id = b.strategy_version_id
-       JOIN broker_accounts ba ON ba.id = b.broker_account_id
-      WHERE b.id = $1`,
-    [botId],
-  );
-  const bot = res.rows[0];
-  if (!bot || bot.state !== 'running') return;
-
-  // Requirement: full trading tick handler. This is a minimal deterministic tick;
-  // extend with candle fetch + risk engine checks for production.
-  await query(`UPDATE bots SET last_run_at=now() WHERE id=$1`, [botId]);
+  if (typeof payload.botId !== 'string') throw new Error('Tick job is missing its bot ID.');
+  await runBotTick(payload.botId);
 });
 
 async function bootstrap(): Promise<void> {

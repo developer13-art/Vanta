@@ -15,6 +15,9 @@ botRouter.get('/', requireAuth, async (req, res, next) => {
               b.max_concurrent_positions, b.daily_loss_limit, b.drawdown_limit,
               b.margin_utilization_limit, b.max_spread_points, b.cooldown_seconds,
               b.stop_behavior, b.started_at, b.stopped_at, b.last_run_at,
+              latest.verdict AS last_decision_verdict,
+              latest.reasoning_summary AS last_decision_summary,
+              latest.created_at AS last_decision_at,
               b.created_at, b.updated_at,
               sv.name AS strategy_name, sv.version AS strategy_version,
               ba.label AS broker_account_label, ba.mode AS broker_mode,
@@ -23,6 +26,11 @@ botRouter.get('/', requireAuth, async (req, res, next) => {
          FROM bots b
          JOIN strategy_versions sv ON sv.id = b.strategy_version_id
          JOIN broker_accounts ba ON ba.id = b.broker_account_id
+         LEFT JOIN LATERAL (
+           SELECT verdict, reasoning_summary, created_at
+             FROM ai_decisions WHERE bot_id = b.id
+            ORDER BY created_at DESC LIMIT 1
+         ) latest ON TRUE
         WHERE b.user_id = $1
         ORDER BY b.created_at DESC`,
       [req.userId],
@@ -139,13 +147,23 @@ botRouter.get('/:id', requireAuth, async (req, res, next) => {
 
 botRouter.post('/:id/start', requireAuth, async (req, res, next) => {
   try {
-    const upd = await query(
-      `UPDATE bots SET state='running', started_at=COALESCE(started_at, now()), stopped_at=NULL, updated_at=now()
-        WHERE id=$1 AND user_id=$2 AND state IN ('ready','paused','stopped','management_only')
-        RETURNING id`,
-      [req.params.id, req.userId],
-    );
-    if (upd.rows.length === 0) throw Errors.conflict('Bot cannot be started from its current state');
+    const started = await withTransaction(async (client) => {
+      const upd = await client.query(
+        `UPDATE bots SET state='running', started_at=COALESCE(started_at, now()), stopped_at=NULL, updated_at=now()
+          WHERE id=$1 AND user_id=$2 AND state IN ('ready','paused','stopped','management_only')
+          RETURNING id`,
+        [req.params.id, req.userId],
+      );
+      if (upd.rows.length === 0) return false;
+      await client.query(
+        `INSERT INTO jobs (type, payload, run_at)
+         VALUES ('tick_analysis', jsonb_build_object('botId', $1::text), now())
+         ON CONFLICT DO NOTHING`,
+        [req.params.id],
+      );
+      return true;
+    });
+    if (!started) throw Errors.conflict('Bot cannot be started from its current state');
     res.json({ ok: true });
   } catch (err) { next(err); }
 });

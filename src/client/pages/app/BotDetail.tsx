@@ -15,22 +15,43 @@ export function BotDetail(): JSX.Element {
   const [data, setData] = useState<Awaited<ReturnType<typeof api.getBot>> | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const load = async () => {
-    if (!id) return;
-    const d = await api.getBot(id);
-    setData(d);
-  };
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      if (!id) return;
+      try {
+        const d = await api.getBot(id);
+        if (active) {
+          setData(d);
+          setLoadError(null);
+        }
+      } catch {
+        if (active) setLoadError('Bot activity could not be refreshed.');
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 15_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [id]);
 
-  useEffect(() => { void load(); }, [id]);
-
-  if (!data) return <div>Loading…</div>;
+  if (!data) return <div>{loadError ?? 'Loading…'}</div>;
 
   const { bot, instruments, openPositions, recentDecisions } = data;
 
   const doAction = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(true);
-    try { await fn(); toast.success(`${label} succeeded`); await load(); }
+    try {
+      await fn();
+      toast.success(`${label} succeeded`);
+      const refreshed = await api.getBot(bot.id);
+      setData(refreshed);
+      setLoadError(null);
+    }
     catch (err) { toast.error(err instanceof ApiRequestError ? err.message : `${label} failed`); }
     finally { setBusy(false); }
   };
@@ -65,6 +86,14 @@ export function BotDetail(): JSX.Element {
           catch (err) { toast.error(err instanceof ApiRequestError ? err.message : 'Delete failed'); }
         }}>Delete</Button>
       </div>
+      {loadError && <div className="bots-alert" role="status">{loadError}</div>}
+      {recentDecisions[0] && (
+        <div className="card bot-latest-feedback">
+          <strong>Latest bot feedback · {recentDecisions[0].verdict}</strong>
+          <span>{recentDecisions[0].reasoning_summary ?? recentDecisions[0].risk_reason ?? 'No additional details.'}</span>
+          <small>{new Date(recentDecisions[0].created_at).toLocaleString()}</small>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 20 }}>
         {(['overview', 'positions', 'decisions', 'config'] as Tab[]).map((t) => (
@@ -72,7 +101,7 @@ export function BotDetail(): JSX.Element {
             background: 'none', border: 'none', color: tab === t ? 'var(--primary)' : 'var(--text-muted)',
             padding: '10px 16px', fontSize: 13, fontWeight: 500,
             borderBottom: tab === t ? '2px solid var(--primary)' : '2px solid transparent',
-          }}>{t[0].toUpperCase() + t.slice(1)}</button>
+          }}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>
         ))}
       </div>
 

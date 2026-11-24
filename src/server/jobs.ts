@@ -118,6 +118,7 @@ export async function drainOnce(): Promise<void> {
 }
 
 let timer: NodeJS.Timeout | null = null;
+let botTickTimer: NodeJS.Timeout | null = null;
 
 export function startScheduler(): void {
   if (timer) return;
@@ -125,6 +126,11 @@ export function startScheduler(): void {
     drainOnce().catch((err) => logger.error({ err }, 'Scheduler drain error'));
   }, env.JOB_POLL_INTERVAL_MS);
   timer.unref();
+  botTickTimer = setInterval(() => {
+    enqueueDueBotTicks().catch((err) => logger.error({ err }, 'Bot tick scheduling failed'));
+  }, 15_000);
+  botTickTimer.unref();
+  enqueueDueBotTicks().catch((err) => logger.error({ err }, 'Initial bot tick scheduling failed'));
   logger.info({ intervalMs: env.JOB_POLL_INTERVAL_MS }, 'Job scheduler started');
 }
 
@@ -132,6 +138,10 @@ export function stopScheduler(): void {
   if (timer) {
     clearInterval(timer);
     timer = null;
+  }
+  if (botTickTimer) {
+    clearInterval(botTickTimer);
+    botTickTimer = null;
   }
 }
 
@@ -142,5 +152,22 @@ export async function recoverStaleJobs(): Promise<void> {
         SET status = 'pending', claimed_at = NULL
       WHERE status = 'running'
         AND claimed_at < now() - interval '2 minutes'`,
+  );
+}
+
+export async function enqueueDueBotTicks(): Promise<void> {
+  await query(
+    `INSERT INTO jobs (type, payload, run_at)
+     SELECT 'tick_analysis', jsonb_build_object('botId', b.id), now()
+       FROM bots b
+      WHERE b.state = 'running'
+        AND (b.last_run_at IS NULL OR b.last_run_at <= now() - interval '5 minutes')
+        AND NOT EXISTS (
+          SELECT 1 FROM jobs j
+           WHERE j.type = 'tick_analysis'
+             AND j.payload->>'botId' = b.id::text
+             AND j.status IN ('pending', 'running')
+        )
+     ON CONFLICT DO NOTHING`,
   );
 }

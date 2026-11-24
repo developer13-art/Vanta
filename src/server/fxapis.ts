@@ -231,6 +231,50 @@ export async function getSymbols(accountId: string): Promise<Array<{
   });
 }
 
+export async function getQuotes(accountId: string, symbols: string[]): Promise<Array<{
+  symbol: string;
+  status: 'ok' | 'no_price' | 'unknown_symbol';
+  bid: number | null;
+  ask: number | null;
+  spreadPoints: number | null;
+  time: string | null;
+  stale: boolean;
+  marketOpen: boolean | null;
+  tradeMode: 'full' | 'longOnly' | 'shortOnly' | 'closeOnly' | 'disabled' | null;
+}>> {
+  if (symbols.length === 0 || symbols.length > 20) {
+    throw new FxApisError('FXAPIs quote requests require between 1 and 20 symbols.', 400, 'INVALID_REQUEST');
+  }
+  const params = new URLSearchParams({ symbols: symbols.join(',') });
+  const data = await requestData(`/v1/accounts/${encodeURIComponent(accountId)}/quotes?${params}`);
+  if (!Array.isArray(data)) throw new FxApisError('FXAPIs returned an invalid quote list.', 502, 'INVALID_RESPONSE');
+  return data.map((item) => {
+    const row = requireRecord(item, 'FXAPIs returned an invalid quote.');
+    const status = row.status;
+    const tradeMode = row.tradeMode;
+    if (typeof row.symbol !== 'string'
+      || (status !== 'ok' && status !== 'no_price' && status !== 'unknown_symbol')
+      || typeof row.stale !== 'boolean'
+      || (tradeMode !== null && tradeMode !== undefined
+        && tradeMode !== ''
+        && tradeMode !== 'full' && tradeMode !== 'longOnly' && tradeMode !== 'shortOnly'
+        && tradeMode !== 'closeOnly' && tradeMode !== 'disabled')) {
+      throw new FxApisError('FXAPIs returned an incomplete quote.', 502, 'INVALID_RESPONSE');
+    }
+    return {
+      symbol: row.symbol,
+      status,
+      bid: numericValue(row.bid),
+      ask: numericValue(row.ask),
+      spreadPoints: numericValue(row.spread),
+      time: typeof row.time === 'string' ? row.time : null,
+      stale: row.stale,
+      marketOpen: typeof row.marketOpen === 'boolean' ? row.marketOpen : null,
+      tradeMode: typeof tradeMode === 'string' && tradeMode !== '' ? tradeMode : null,
+    };
+  });
+}
+
 export async function getOpenPositions(accountId: string): Promise<Array<{
   id: string;
   symbol: string;

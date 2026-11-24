@@ -54,7 +54,11 @@ export function Bots(): JSX.Element {
     setLoading(false);
   };
 
-  useEffect(() => { void load(true); }, []);
+  useEffect(() => {
+    void load(true);
+    const timer = window.setInterval(() => { void load(); }, 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const counts = {
     running: bots.filter((bot) => bot.state === 'running').length,
@@ -170,6 +174,11 @@ export function Bots(): JSX.Element {
                       <span><Icon name="markets" size={13} /> {bot.instrument_count} instrument{bot.instrument_count === 1 ? '' : 's'}</span>
                       <span><Icon name="broker" size={13} /> {bot.broker_account_label}</span>
                       <span className={`bot-mode-tag ${bot.broker_mode}`}>{bot.broker_mode}</span>
+                    </div>
+                    <div className="bot-card-feedback">
+                      <strong>{bot.last_decision_verdict ?? (bot.state === 'running' ? 'Waiting for first analysis' : 'No analysis yet')}</strong>
+                      <span>{bot.last_decision_summary ?? 'Start the bot to begin receiving strategy feedback.'}</span>
+                      {bot.last_decision_at && <small>Checked {new Date(bot.last_decision_at).toLocaleTimeString()}</small>}
                     </div>
                   </div>
 
