@@ -1,15 +1,20 @@
 import { query } from './db';
 import { logger } from './logger';
 import { fetchBrokerCandles, fetchBrokerQuotes, getBrokerHealth } from './broker-providers';
+import type { BrokerLiveQuote } from './broker-providers';
 import type { BrokerProvider } from '../shared/types';
 import { checkEntry } from './risk-engine';
-import { getStrategy } from './strategy';
-import type { StrategySignal } from './strategy';
+import { analyzeMarket } from './strategy';
+import type { Candle, StrategySignal } from './strategy';
 import { closePosition, submitOrder } from './execution';
 import { isHalted } from './admin-emergency';
+import { getAiAssessments, isAiEnabled } from './ai-context';
+import { chargeAiAssessment } from './billing';
+import { RATES } from './credit-rates';
+import { AppError } from './errors';
 
-const TIMEFRAME = '5m' as const;
-const CANDLE_SECONDS = 5 * 60;
+const TIMEFRAME = '1m' as const;
+const CANDLE_SECONDS = 60;
 const CANDLE_COUNT = 150;
 
 interface BotTick {
@@ -43,6 +48,7 @@ interface TickInstrument {
   id: string;
   broker_symbol: string;
   canonical_symbol: string;
+  category: string;
   digits: number | null;
   min_volume: string | null;
   max_volume: string | null;
@@ -56,12 +62,16 @@ function currentCandleBucket(): number {
 
 function reasonText(reason: string): string {
   const messages: Record<string, string> = {
-    bullish_cross: 'Fast EMA crossed above slow EMA on the latest closed 5-minute candle.',
-    bearish_cross: 'Fast EMA crossed below slow EMA on the latest closed 5-minute candle.',
-    no_cross: 'No EMA crossover on the latest closed 5-minute candle.',
-    insufficient_history: 'Waiting for enough candle history to evaluate the strategy.',
-    invalid_params: 'The strategy parameters are invalid; review the bot configuration.',
-    spread_too_wide: 'The current spread is too wide for this strategy.',
+    bullish_cross: 'The market showed a bullish EMA crossover on the latest closed candle.',
+    bearish_cross: 'The market showed a bearish EMA crossover on the latest closed candle.',
+    no_cross: 'No EMA crossover was detected on the latest closed candle.',
+    insufficient_history: 'Waiting for enough 1-minute market history to analyze this instrument.',
+    invalid_params: 'The bot configuration is invalid; review its settings.',
+    spread_too_wide: 'The current spread is too wide for this bot.',
+    ai_assessment: 'AI analysis recommends this direction; independent risk checks still apply.',
+    ai_disabled: 'AI analysis is not enabled on this server; no trade was placed.',
+    ai_assessment_unavailable: 'AI analysis could not be completed; no trade was placed.',
+    insufficient_ai_credits: 'The wallet does not have enough credits for an AI assessment.',
     invalid_lot_size: 'The configured lot size is invalid.',
     exceeds_max_lot: 'The configured lot size exceeds the platform or broker limit.',
     max_concurrent_positions_reached: 'The bot has reached its maximum number of open positions.',
@@ -105,39 +115,55 @@ async function saveDecision(args: {
   riskReason?: string | null;
   structuredOutput?: Record<string, unknown>;
   quote?: Record<string, unknown> | null;
-}): Promise<void> {
-  const existing = await query(
+}): Promise<string> {
+  const existing = await query<{ id: string }>(
     `SELECT id FROM ai_decisions
       WHERE bot_id=$1 AND broker_symbol_id=$2
         AND input_summary->>'candleTime'=$3
       LIMIT 1`,
     [args.bot.id, args.instrument.id, String(args.candleTime)],
   );
-  if (existing.rows.length > 0) return;
+  const values = [
+    args.signal.verdict,
+    args.signal.confidence,
+    args.summary,
+    JSON.stringify({
+      ...args.signal,
+      quote: args.quote ?? null,
+      ...(args.structuredOutput ?? {}),
+    }),
+    args.riskOutcome ?? null,
+    args.riskReason ?? null,
+    JSON.stringify({ timeframe: TIMEFRAME, candleTime: args.candleTime }),
+  ];
+  if (existing.rows[0]) {
+    await query(
+      `UPDATE ai_decisions
+          SET verdict=$2, confidence=$3, reasoning_summary=$4, structured_output=$5::jsonb,
+              risk_outcome=$6, risk_reason=$7, input_summary=$8::jsonb
+        WHERE id=$1`,
+      [existing.rows[0].id, ...values],
+    );
+    return existing.rows[0].id;
+  }
 
-  await query(
+  const inserted = await query<{ id: string }>(
     `INSERT INTO ai_decisions
        (bot_id, broker_symbol_id, strategy_version_id, verdict, confidence,
         reasoning_summary, structured_output, risk_outcome, risk_reason,
         input_summary, latency_ms)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0)
+     RETURNING id`,
     [
       args.bot.id,
       args.instrument.id,
       args.bot.strategy_version_id,
-      args.signal.verdict,
-      args.signal.confidence,
-      args.summary,
-      JSON.stringify({
-        ...args.signal,
-        quote: args.quote ?? null,
-        ...(args.structuredOutput ?? {}),
-      }),
-      args.riskOutcome ?? null,
-      args.riskReason ?? null,
-      JSON.stringify({ timeframe: TIMEFRAME, candleTime: args.candleTime }),
+      ...values.slice(0, 7),
     ],
   );
+  const decisionId = inserted.rows[0]?.id;
+  if (!decisionId) throw new Error('Failed to persist bot decision');
+  return decisionId;
 }
 
 function quoteEntryBlock(
@@ -205,11 +231,8 @@ export async function runBotTick(botId: string): Promise<void> {
   const bot = botResult.rows[0];
   if (!bot || bot.state !== 'running') return;
 
-  const strategy = getStrategy(bot.strategy_name);
-  if (!strategy) throw new Error(`Unknown bot strategy: ${bot.strategy_name}`);
-
   const instrumentResult = await query<TickInstrument>(
-    `SELECT s.id, s.broker_symbol, s.canonical_symbol, s.digits,
+    `SELECT s.id, s.broker_symbol, s.canonical_symbol, s.category, s.digits,
             s.min_volume, s.max_volume, s.volume_step, s.is_tradable
        FROM bot_instruments bi
        JOIN broker_symbols s ON s.id = bi.broker_symbol_id
@@ -321,6 +344,164 @@ export async function runBotTick(botId: string): Promise<void> {
     dailyStartBalance = Number(riskBaseline.rows[0]?.daily_start_balance ?? 0);
   }
 
+  const alreadyAnalyzed = new Set<string>();
+  const assessmentTargets: Array<{
+    instrument: TickInstrument;
+    candles: Candle[];
+    candleTime: number;
+    quote: BrokerLiveQuote;
+  }> = [];
+  for (const instrument of instruments) {
+    if (!instrument.is_tradable) continue;
+    const candles = candleById.get(instrument.id)?.candles ?? [];
+    if (candles.length === 0) continue;
+    const latestCandle = candles[candles.length - 1];
+    if (!latestCandle) continue;
+    const candleTime = latestCandle.time;
+    const existing = await query(
+      `SELECT id FROM ai_decisions
+        WHERE bot_id=$1 AND broker_symbol_id=$2
+          AND input_summary->>'candleTime'=$3
+        LIMIT 1`,
+      [bot.id, instrument.id, String(candleTime)],
+    );
+    if (existing.rows.length > 0) {
+      alreadyAnalyzed.add(instrument.id);
+      continue;
+    }
+
+    const quote = quoteBySymbol.get(instrument.broker_symbol);
+    if (candles.length < 50 || !health || health.status !== 'connected' || !health.info
+      || quoteError || !quote || quote.status !== 'ok' || quote.bid === null || quote.ask === null
+      || quote.stale || quote.marketOpen === false || quote.tradeMode === 'disabled' || quote.tradeMode === 'closeOnly') {
+      continue;
+    }
+    assessmentTargets.push({ instrument, candles, candleTime, quote });
+  }
+
+  const assessmentSignals = new Map<string, StrategySignal>();
+  let assessmentFailureReason: string | null = null;
+  if (assessmentTargets.length > 0) {
+    if (!isAiEnabled()) {
+      assessmentFailureReason = 'ai_disabled';
+    } else {
+      const wallet = await query<{ available_credits: number }>(
+        `SELECT available_credits FROM wallets WHERE user_id=$1`,
+        [bot.user_id],
+      );
+      if ((wallet.rows[0]?.available_credits ?? 0) < RATES.aiAssessment) {
+        assessmentFailureReason = 'insufficient_ai_credits';
+      } else {
+        let aiDecisions: Awaited<ReturnType<typeof getAiAssessments>> | null = null;
+        try {
+          aiDecisions = await getAiAssessments({
+            timeframe: TIMEFRAME,
+            bot: {
+              name: bot.name,
+              lotSize: Number(bot.lot_size),
+              maxConcurrentPositions: bot.max_concurrent_positions,
+              dailyLossLimit: Number(bot.daily_loss_limit),
+              drawdownLimit: Number(bot.drawdown_limit),
+              marginUtilizationLimit: Number(bot.margin_utilization_limit),
+              maxSpreadPoints: bot.max_spread_points,
+            },
+            account: {
+              mode: bot.account_mode,
+              currency: health?.info?.currency,
+              balance: health?.info?.balance,
+              equity: health?.info?.equity,
+              freeMargin: health?.info?.freeMargin,
+              usedMargin: health?.info?.usedMargin,
+              marginLevel: health?.info?.marginLevel,
+            },
+            markets: assessmentTargets.map(({ instrument, candles, quote }) => ({
+              symbol: instrument.broker_symbol,
+              canonicalSymbol: instrument.canonical_symbol,
+              category: instrument.category,
+              quote: {
+                bid: quote.bid,
+                ask: quote.ask,
+                spreadPoints: quote.spreadPoints,
+                marketOpen: quote.marketOpen,
+                tradeMode: quote.tradeMode,
+              },
+              indicators: analyzeMarket(candles),
+            })),
+          });
+        } catch (error) {
+          assessmentFailureReason = 'ai_assessment_unavailable';
+          logger.warn({ err: error, botId: bot.id }, 'Bot AI market assessment failed');
+        }
+
+        if (aiDecisions) {
+          const decisionIds: string[] = [];
+          for (const target of assessmentTargets) {
+            const decision = aiDecisions.find((item) => item.symbol === target.instrument.broker_symbol);
+            if (!decision) throw new Error(`AI assessment omitted ${target.instrument.broker_symbol}`);
+            const signal: StrategySignal = {
+              verdict: decision.verdict,
+              confidence: decision.confidence,
+              reason: 'ai_assessment',
+              meta: {
+                reasoning: decision.reasoning,
+                indicators: analyzeMarket(target.candles),
+              },
+            };
+            const decisionId = await saveDecision({
+              bot,
+              instrument: target.instrument,
+              candleTime: target.candleTime,
+              signal,
+              summary: decision.reasoning,
+              quote: {
+                bid: target.quote.bid,
+                ask: target.quote.ask,
+                spreadPoints: target.quote.spreadPoints,
+                time: target.quote.time,
+                marketOpen: target.quote.marketOpen,
+                tradeMode: target.quote.tradeMode,
+              },
+            });
+            assessmentSignals.set(target.instrument.id, signal);
+            decisionIds.push(decisionId);
+          }
+
+          try {
+            const chargeDecisionId = decisionIds[0];
+            if (!chargeDecisionId) throw new Error('AI assessment has no saved decision to bill');
+            await chargeAiAssessment({
+              userId: bot.user_id,
+              botId: bot.id,
+              brokerAccountId: bot.broker_account_id,
+              decisionId: chargeDecisionId,
+            });
+          } catch (error) {
+            if (!(error instanceof AppError) || error.code !== 'INSUFFICIENT_CREDITS') throw error;
+            assessmentFailureReason = 'insufficient_ai_credits';
+            const noCreditSignal: StrategySignal = {
+              verdict: 'NO_TRADE',
+              confidence: 0,
+              reason: assessmentFailureReason,
+              meta: {},
+            };
+            for (const target of assessmentTargets) {
+              assessmentSignals.set(target.instrument.id, noCreditSignal);
+              await saveDecision({
+                bot,
+                instrument: target.instrument,
+                candleTime: target.candleTime,
+                signal: noCreditSignal,
+                summary: reasonText(assessmentFailureReason),
+                riskOutcome: 'rejected',
+                riskReason: assessmentFailureReason,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
   for (const instrument of instruments) {
     if (!instrument.is_tradable) {
       await saveNoTrade(bot, instrument, candleTimeFallback, 'broker_not_tradable');
@@ -330,7 +511,7 @@ export async function runBotTick(botId: string): Promise<void> {
     const candleResult = candleById.get(instrument.id);
     const candles = candleResult?.candles ?? [];
     const candleTime = candles[candles.length - 1]?.time ?? candleTimeFallback;
-    if (candles.length === 0) {
+    if (candles.length < 50) {
       await saveNoTrade(
         bot,
         instrument,
@@ -341,14 +522,7 @@ export async function runBotTick(botId: string): Promise<void> {
       continue;
     }
 
-    const existing = await query(
-      `SELECT id FROM ai_decisions
-        WHERE bot_id=$1 AND broker_symbol_id=$2
-          AND input_summary->>'candleTime'=$3
-        LIMIT 1`,
-      [bot.id, instrument.id, String(candleTime)],
-    );
-    if (existing.rows.length > 0) continue;
+    if (alreadyAnalyzed.has(instrument.id)) continue;
 
     if (!health || health.status !== 'connected' || !health.info) {
       await saveNoTrade(bot, instrument, candleTime, 'broker_not_connected', {
@@ -369,11 +543,6 @@ export async function runBotTick(botId: string): Promise<void> {
       });
       continue;
     }
-    const signal = strategy.evaluate({
-      candles,
-      spreadPoints: quote.spreadPoints,
-      symbolDigits: instrument.digits ?? 5,
-    }, bot.strategy_params);
     const quoteSummary = {
       bid: quote.bid,
       ask: quote.ask,
@@ -383,13 +552,34 @@ export async function runBotTick(botId: string): Promise<void> {
       tradeMode: quote.tradeMode,
     };
 
+    if (quote.stale) {
+      await saveNoTrade(bot, instrument, candleTime, 'stale_quote', { quote: quoteSummary });
+      continue;
+    }
+    if (quote.marketOpen === false) {
+      await saveNoTrade(bot, instrument, candleTime, 'market_closed', { quote: quoteSummary });
+      continue;
+    }
+    if (quote.tradeMode === 'disabled' || quote.tradeMode === 'closeOnly') {
+      await saveNoTrade(bot, instrument, candleTime, 'market_trade_disabled', { quote: quoteSummary });
+      continue;
+    }
+
+    const signal = assessmentSignals.get(instrument.id);
+    if (!signal) {
+      await saveNoTrade(bot, instrument, candleTime, assessmentFailureReason ?? 'ai_assessment_unavailable', {
+        quote: quoteSummary,
+      });
+      continue;
+    }
+
     if (signal.verdict !== 'BUY' && signal.verdict !== 'SELL') {
       await saveDecision({
         bot,
         instrument,
         candleTime,
         signal,
-        summary: reasonText(signal.reason),
+        summary: typeof signal.meta.reasoning === 'string' ? signal.meta.reasoning : reasonText(signal.reason),
         quote: quoteSummary,
       });
       continue;
@@ -400,9 +590,7 @@ export async function runBotTick(botId: string): Promise<void> {
       ? 'quote_unavailable'
       : quote.stale
         ? 'stale_quote'
-        : quote.marketOpen === false
-          ? 'market_closed'
-          : null;
+        : null;
     if (quoteDataBlock) {
       await saveDecision({
         bot,
@@ -636,11 +824,14 @@ export async function runBotTick(botId: string): Promise<void> {
       }
     }
 
+    const analysisSummary = typeof signal.meta.reasoning === 'string'
+      ? signal.meta.reasoning
+      : reasonText(signal.reason);
     const summary = orderResults.some((order) => order.status === 'accepted')
-      ? `${reasonText(signal.reason)} Broker accepted ${orderResults.filter((order) => order.status === 'accepted').length} order(s).`
+      ? `${analysisSummary} Broker accepted ${orderResults.filter((order) => order.status === 'accepted').length} order(s).`
       : riskReason
         ? `${reasonText(riskReason)}${orderResults[0]?.message ? ` ${orderResults[0].message}` : ''}`
-        : reasonText(signal.reason);
+        : analysisSummary;
     await saveDecision({
       bot,
       instrument,

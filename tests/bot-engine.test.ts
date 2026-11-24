@@ -5,10 +5,13 @@ const state = vi.hoisted(() => ({
   fetchBrokerCandles: vi.fn(),
   fetchBrokerQuotes: vi.fn(),
   getBrokerHealth: vi.fn(),
+  getAiAssessments: vi.fn(),
+  chargeAiAssessment: vi.fn(),
   submitOrder: vi.fn(),
   closePosition: vi.fn(),
   isHalted: vi.fn().mockResolvedValue({ halted: false }),
   logger: { info: vi.fn(), warn: vi.fn() },
+  decisionWasInserted: false,
 }));
 
 vi.mock('../src/server/db', () => ({ query: state.query }));
@@ -23,12 +26,24 @@ vi.mock('../src/server/execution', () => ({
   submitOrder: state.submitOrder,
 }));
 vi.mock('../src/server/admin-emergency', () => ({ isHalted: state.isHalted }));
+vi.mock('../src/server/ai-context', () => ({
+  getAiAssessments: state.getAiAssessments,
+  isAiEnabled: () => true,
+}));
+vi.mock('../src/server/billing', () => ({ chargeAiAssessment: state.chargeAiAssessment }));
 
 import { runBotTick } from '../src/server/bot-engine';
 
 describe('bot analysis ticks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    state.decisionWasInserted = false;
+    state.getAiAssessments.mockResolvedValue([{
+      symbol: 'EURUSD.a',
+      verdict: 'NO_TRADE',
+      confidence: 0.2,
+      reasoning: 'No clear direction from the current market conditions.',
+    }]);
     state.query.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM bots b')) {
         return { rows: [{
@@ -62,6 +77,7 @@ describe('bot analysis ticks', () => {
           id: 'symbol-1',
           broker_symbol: 'EURUSD.a',
           canonical_symbol: 'EURUSD',
+          category: 'forex_major',
           digits: 5,
           min_volume: '0.01',
           max_volume: '100',
@@ -69,7 +85,14 @@ describe('bot analysis ticks', () => {
           is_tradable: false,
         }] };
       }
-      if (sql.includes('SELECT id FROM ai_decisions')) return { rows: [] };
+      if (sql.includes('FROM wallets')) return { rows: [{ available_credits: 100 }] };
+      if (sql.includes('SELECT id FROM ai_decisions')) {
+        return { rows: state.decisionWasInserted ? [{ id: 'decision-1' }] : [] };
+      }
+      if (sql.includes('INSERT INTO ai_decisions')) {
+        state.decisionWasInserted = true;
+        return { rows: [{ id: 'decision-1' }] };
+      }
       return { rows: [] };
     });
   });
@@ -121,6 +144,7 @@ describe('bot analysis ticks', () => {
           id: 'symbol-1',
           broker_symbol: 'EURUSD.a',
           canonical_symbol: 'EURUSD',
+          category: 'forex_major',
           digits: 5,
           min_volume: '0.01',
           max_volume: '100',
@@ -128,7 +152,14 @@ describe('bot analysis ticks', () => {
           is_tradable: true,
         }] };
       }
-      if (sql.includes('SELECT id FROM ai_decisions')) return { rows: [] };
+      if (sql.includes('FROM wallets')) return { rows: [{ available_credits: 100 }] };
+      if (sql.includes('SELECT id FROM ai_decisions')) {
+        return { rows: state.decisionWasInserted ? [{ id: 'decision-1' }] : [] };
+      }
+      if (sql.includes('INSERT INTO ai_decisions')) {
+        state.decisionWasInserted = true;
+        return { rows: [{ id: 'decision-1' }] };
+      }
       if (sql.includes('AS open_positions')) return { rows: [{ open_positions: 0, aggregate_lots: 0 }] };
       if (sql.includes('AS daily_loss')) return { rows: [{ daily_loss: 0 }] };
       if (sql.includes('FROM risk_limits')) return { rows: [] };
@@ -137,11 +168,10 @@ describe('bot analysis ticks', () => {
       return { rows: [] };
     });
 
-    const now = Math.floor(Date.now() / 300_000) * 300 - 300;
-    const closes = Array.from({ length: 22 }, (_, index) => 1.2 - index * 0.001);
-    closes.push(1.4);
+    const now = Math.floor(Date.now() / 60_000) * 60 - 60;
+    const closes = Array.from({ length: 60 }, (_, index) => 1.2 + Math.sin(index / 4) * 0.003 + index * 0.00002);
     state.fetchBrokerCandles.mockResolvedValue(closes.map((close, index) => ({
-      time: now - (closes.length - index - 1) * 300,
+      time: now - (closes.length - index - 1) * 60,
       open: close,
       high: close + 0.001,
       low: close - 0.001,
@@ -158,6 +188,12 @@ describe('bot analysis ticks', () => {
       stale: false,
       marketOpen: true,
       tradeMode: 'full',
+    }]);
+    state.getAiAssessments.mockResolvedValue([{
+      symbol: 'EURUSD.a',
+      verdict: 'BUY',
+      confidence: 0.84,
+      reasoning: 'Trend and momentum are positive with volatility remaining controlled.',
     }]);
     state.getBrokerHealth.mockResolvedValue({
       status: 'connected',
@@ -182,6 +218,8 @@ describe('bot analysis ticks', () => {
       volume: 0.01,
       providerAccountId: 'provider-account-1',
     }));
+    expect(state.getAiAssessments).toHaveBeenCalledTimes(1);
+    expect(state.chargeAiAssessment).toHaveBeenCalledTimes(1);
     const decisionInsert = state.query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO ai_decisions'));
     expect(decisionInsert?.[1]).toEqual(expect.arrayContaining(['BUY']));
     const baselineUpdate = state.query.mock.calls.find(([sql]) => String(sql).includes('SET peak_equity='));

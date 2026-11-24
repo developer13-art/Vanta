@@ -4,7 +4,7 @@ import { Icon, type IconName } from '../../components/Icon';
 
 const FEATURES: Array<{ icon: IconName; title: string; description: string; label: string }> = [
   { icon: 'broker', title: 'Broker-connected trading', description: 'Connect an MT4 or MT5 account and work with the instruments available through your broker.', label: 'YOUR ACCOUNT' },
-  { icon: 'bot', title: 'Configurable strategy bots', description: 'Set up supported EMA crossover bots with editable parameters and reviewable settings.', label: 'STRATEGY TOOLS' },
+  { icon: 'bot', title: 'AI Adaptive bots', description: 'Analyze trend, momentum, live quotes, and volatility across selected instruments every two minutes.', label: 'AI ANALYSIS' },
   { icon: 'shield', title: 'Independent risk checks', description: 'Trade proposals pass through risk controls before submission. Your configured limits stay in force.', label: 'RISK CONTROLS' },
   { icon: 'analytics', title: 'Clear account activity', description: 'Review broker-reported positions, order history, wallet activity, and platform events in one workspace.', label: 'VISIBILITY' },
   { icon: 'credits', title: 'Prepaid credit wallet', description: 'Use published per-action rates and track confirmed credit changes in the wallet ledger.', label: 'BILLING' },
@@ -17,7 +17,7 @@ export function Features(): JSX.Element {
       <header className="public-page-heading">
         <span className="public-page-eyebrow">TOOLS FOR YOUR WORKFLOW</span>
         <h1>Trading tools, with your account in view</h1>
-        <p>VANTA brings broker connections, strategy setup, risk checks, and wallet activity into a single workspace.</p>
+        <p>VANTA brings broker connections, adaptive AI analysis, risk checks, and wallet activity into a single workspace.</p>
         <Link to="/signup" className="public-primary-link">Explore VANTA <Icon name="arrow-right" size={15} /></Link>
       </header>
 
@@ -32,7 +32,7 @@ export function Features(): JSX.Element {
         ))}
       </section>
 
-      <aside className="feature-disclaimer"><Icon name="shield" size={17} /><p>Automated tools do not remove market risk. Review settings before authorizing a strategy; trading results are not guaranteed.</p></aside>
+      <aside className="feature-disclaimer"><Icon name="shield" size={17} /><p>Automated tools do not remove market risk. Review settings before starting a bot; trading results are not guaranteed.</p></aside>
     </div>
   );
 }

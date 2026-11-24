@@ -5,18 +5,18 @@ export function AiTrading(): JSX.Element {
     <div className="public-section">
       <h2>AI-Assisted, Not AI-Controlled</h2>
       <p>
-        The VANTA platform uses a layered architecture. Market data flows through quantitative analysis,
-        strategy evaluation, and a bounded AI assessment. The risk engine independently verifies every
-        proposal — the AI can never override hard limits, change credentials, or place arbitrary orders.
+        AI Adaptive bots review one-minute candles, live quotes, trend, momentum, and volatility every two
+        minutes. The AI can recommend only BUY, SELL, HOLD, or NO_TRADE. An independent risk engine
+        verifies every proposed entry; the model cannot change position size, credentials, or risk limits.
       </p>
       <div className="grid-2" style={{ marginTop: 24 }}>
         <div className="card">
-          <div className="card-title">Deterministic Strategies</div>
-          <p>Trend, momentum, mean-reversion, and breakout strategies evaluate live market conditions against configurable parameters.</p>
+          <div className="card-title">Adaptive Market Context</div>
+          <p>Each assessment combines multiple technical indicators and broker quotes rather than following one fixed entry pattern.</p>
         </div>
         <div className="card">
           <div className="card-title">Bounded AI Context</div>
-          <p>AI interprets structure and returns BUY/SELL/HOLD/NO_TRADE with confidence — never executes directly.</p>
+          <p>The configured AI provider returns a validated decision for each selected instrument. One batched assessment costs 2 VANTA credits.</p>
         </div>
         <div className="card">
           <div className="card-title">Independent Risk Engine</div>
@@ -24,7 +24,7 @@ export function AiTrading(): JSX.Element {
         </div>
         <div className="card">
           <div className="card-title">Fail-Safe Defaults</div>
-          <p>Model timeouts, stale data, or uncertain outcomes fail to NO_TRADE. The safe path is always the default.</p>
+          <p>Disabled AI, model timeouts, invalid responses, stale quotes, or uncertain outcomes fail to NO_TRADE. The safe path is always the default.</p>
         </div>
       </div>
     </div>

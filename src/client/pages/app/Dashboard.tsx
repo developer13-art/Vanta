@@ -402,7 +402,7 @@ function Dashboard(): JSX.Element {
                 <span className={`bot-avatar${bot.state === 'running' ? ' bot-avatar-active' : ''}`}><Icon name="bot" size={18} /></span>
                 <span className="bot-info">
                   <strong>{bot.name}</strong>
-                  <small>{bot.strategy_name}<i />{bot.open_positions} open position{bot.open_positions === 1 ? '' : 's'}</small>
+                  <small>{bot.strategy_name === 'ai_adaptive' ? 'AI Adaptive' : bot.strategy_name}<i />{bot.open_positions} open position{bot.open_positions === 1 ? '' : 's'}</small>
                   <small className="bot-feedback">{bot.last_decision_summary ?? (bot.state === 'running' ? 'Waiting for first analysis' : 'No analysis yet')}</small>
                 </span>
                 <BotStateBadge state={bot.state} />

@@ -6,8 +6,8 @@ const STEPS = [
   ['Create your VANTA account', 'Sign up and complete the account verification steps.'],
   ['Connect a trading account', 'Link an MT4 or MT5 account. A demo account is recommended for your first connection.'],
   ['Review available instruments', 'VANTA reads instrument availability from the connected broker account.'],
-  ['Configure a supported strategy', 'Set up an EMA crossover bot and review its parameters and risk settings.'],
-  ['Check the configuration', 'Review the account, mode, strategy values, and risk controls before creating the bot.'],
+  ['Choose AI Adaptive analysis', 'The bot reviews one-minute candles, quotes, trend, momentum, and volatility every two minutes.'],
+  ['Check the configuration', 'Review the account, mode, instruments, position sizing, credit cost, and risk controls before creating the bot.'],
   ['Choose when to start', 'A newly created bot is ready, not running. Start it only after you have reviewed the setup.'],
   ['Monitor and manage', 'Follow account health, positions, history, and wallet activity from the workspace.'],
 ];

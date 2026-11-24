@@ -75,7 +75,7 @@ export function TradeDetail(): JSX.Element {
         <div className="card-title">Context</div>
         <table className="table"><tbody>
           <tr><td>Bot</td><td>{p.bot_name}</td></tr>
-          <tr><td>Strategy</td><td>{p.strategy_name} v{p.strategy_version}</td></tr>
+          <tr><td>Analysis mode</td><td>{p.strategy_name === 'ai_adaptive' ? 'AI Adaptive' : p.strategy_name} v{p.strategy_version}</td></tr>
           <tr><td>Broker account</td><td>{p.broker_account_label}</td></tr>
           <tr><td>Broker symbol</td><td>{p.broker_symbol}</td></tr>
           <tr><td>Opened</td><td>{new Date(p.opened_at).toLocaleString()}</td></tr>

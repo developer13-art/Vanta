@@ -3,7 +3,6 @@ import { query, withTransaction } from '../db';
 import { Errors } from '../errors';
 import { requireAuth, validateBody } from '../middleware';
 import { createBotSchema, closePositionsSchema, closeAllSchema } from '../schema';
-import { getStrategy } from '../strategy';
 import { closePosition } from '../execution';
 
 export const botRouter = Router();
@@ -43,8 +42,9 @@ botRouter.post('/', requireAuth, validateBody(createBotSchema), async (req, res,
   try {
     const body = req.body as typeof createBotSchema._type;
 
-    const strategy = getStrategy(body.strategyName);
-    if (!strategy) throw Errors.badRequest('Unknown strategy');
+    if (body.strategyName !== 'ai_adaptive') {
+      throw Errors.badRequest('Bots use AI Adaptive analysis instead of a fixed strategy.');
+    }
 
     const account = await query<{ id: string; mode: string; trading_enabled: boolean }>(
       `SELECT id, mode, trading_enabled FROM broker_accounts WHERE id=$1 AND user_id=$2`,

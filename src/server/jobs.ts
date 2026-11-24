@@ -151,7 +151,7 @@ export async function recoverStaleJobs(): Promise<void> {
     `UPDATE jobs
         SET status = 'pending', claimed_at = NULL
       WHERE status = 'running'
-        AND claimed_at < now() - interval '2 minutes'`,
+        AND claimed_at < now() - interval '5 minutes'`,
   );
 }
 
@@ -161,7 +161,7 @@ export async function enqueueDueBotTicks(): Promise<void> {
      SELECT 'tick_analysis', jsonb_build_object('botId', b.id), now()
        FROM bots b
       WHERE b.state = 'running'
-        AND (b.last_run_at IS NULL OR b.last_run_at <= now() - interval '5 minutes')
+        AND (b.last_run_at IS NULL OR b.last_run_at <= now() - interval '2 minutes')
         AND NOT EXISTS (
           SELECT 1 FROM jobs j
            WHERE j.type = 'tick_analysis'

@@ -18,7 +18,7 @@ export function Home(): JSX.Element {
         <div className="home-hero-copy">
           <div className="home-eyebrow"><span /> BROKER-CONNECTED TRADING WORKSPACE</div>
           <h1>Trade smarter.<br /><span>Stay in control.</span></h1>
-          <p>Connect your own MetaTrader account, configure a strategy, and manage automated trading with risk controls you define.</p>
+          <p>Connect your own MetaTrader account, set up adaptive AI analysis, and manage automated trading with risk controls you define.</p>
           <div className="home-hero-actions">
             <Link to="/signup" className="home-primary-button">Start Trading Now <Icon name="arrow-right" size={16} /></Link>
             <Link to="/how-it-works" className="home-secondary-button"><span className="home-play-icon">▶</span> How it works</Link>
@@ -95,7 +95,7 @@ export function Home(): JSX.Element {
         </div>
         <div className="home-process-steps">
           <article><span>01</span><div><h3>Connect</h3><p>Link your MetaTrader 4 or 5 broker account through MetaApi.</p></div></article>
-          <article><span>02</span><div><h3>Configure</h3><p>Choose your instruments and set strategy and risk parameters.</p></div></article>
+          <article><span>02</span><div><h3>Configure</h3><p>Choose your instruments and review AI analysis, position sizing, and risk limits.</p></div></article>
           <article><span>03</span><div><h3>Review & manage</h3><p>Create your bot in Ready state, then start or pause it from your dashboard.</p></div></article>
         </div>
       </section>

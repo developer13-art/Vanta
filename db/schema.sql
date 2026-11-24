@@ -546,6 +546,26 @@ VALUES (
 )
 ON CONFLICT (name, version) DO NOTHING;
 
+INSERT INTO strategy_versions (name, version, description, params_schema, default_params, eligible_categories)
+VALUES (
+  'ai_adaptive',
+  '1.0.0',
+  'AI analysis of one-minute market indicators, quotes, trend, momentum, and volatility',
+  '{"type":"object","properties":{}}'::jsonb,
+  '{}'::jsonb,
+  ARRAY['forex_major','forex_minor','forex_exotic','metal','index','energy','crypto_cfd','other']
+)
+ON CONFLICT (name, version) DO NOTHING;
+
+UPDATE bots
+   SET strategy_version_id = sv.id,
+       strategy_params = '{}'::jsonb,
+       updated_at = now()
+  FROM strategy_versions sv
+ WHERE sv.name = 'ai_adaptive'
+   AND sv.version = '1.0.0'
+   AND bots.strategy_version_id <> sv.id;
+
 ALTER TABLE risk_limits DROP CONSTRAINT IF EXISTS risk_limits_scope_scope_id_limit_key_key;
 ALTER TABLE risk_limits ADD CONSTRAINT risk_limits_scope_scope_id_limit_key_key
   UNIQUE NULLS NOT DISTINCT (scope, scope_id, limit_key);

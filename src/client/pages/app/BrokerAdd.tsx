@@ -150,7 +150,7 @@ export function BrokerAdd(): JSX.Element {
             <Button type="submit" loading={loading}>Connect account <Icon name="arrow-right" size={16} /></Button>
             <Link to="/app/brokers">Cancel</Link>
           </div>
-          <p className="broker-connect-disclaimer">Connecting an account does not start a trading bot. Review and authorize each strategy separately.</p>
+          <p className="broker-connect-disclaimer">Connecting an account does not start a trading bot. Review each bot and its risk limits before starting it.</p>
         </form>
 
         <aside className="broker-connect-aside">

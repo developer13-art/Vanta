@@ -108,7 +108,7 @@ export function BotDetail(): JSX.Element {
       {tab === 'overview' && (
         <div>
           <div className="grid-3" style={{ marginBottom: 24 }}>
-            <Stat label="Strategy" value={`${bot.strategy_name} v${bot.strategy_version}`} />
+            <Stat label="Analysis mode" value={`${bot.strategy_name === 'ai_adaptive' ? 'AI Adaptive' : bot.strategy_name} v${bot.strategy_version}`} />
             <Stat label="Lot size" value={bot.lot_size} />
             <Stat label="Batch size" value={bot.entry_batch_size} />
             <Stat label="Max positions" value={bot.max_concurrent_positions} />

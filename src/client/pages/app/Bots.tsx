@@ -169,7 +169,7 @@ export function Bots(): JSX.Element {
                         <i />{stateLabel}
                       </span>
                     </div>
-                    <div className="bot-card-subtitle">{bot.strategy_name.replace(/_/g, ' ')} <span>·</span> v{bot.strategy_version}</div>
+                    <div className="bot-card-subtitle">{bot.strategy_name === 'ai_adaptive' ? 'AI Adaptive' : bot.strategy_name.replace(/_/g, ' ')} <span>·</span> v{bot.strategy_version}</div>
                     <div className="bot-card-meta">
                       <span><Icon name="markets" size={13} /> {bot.instrument_count} instrument{bot.instrument_count === 1 ? '' : 's'}</span>
                       <span><Icon name="broker" size={13} /> {bot.broker_account_label}</span>
@@ -177,7 +177,7 @@ export function Bots(): JSX.Element {
                     </div>
                     <div className="bot-card-feedback">
                       <strong>{bot.last_decision_verdict ?? (bot.state === 'running' ? 'Waiting for first analysis' : 'No analysis yet')}</strong>
-                      <span>{bot.last_decision_summary ?? 'Start the bot to begin receiving strategy feedback.'}</span>
+                      <span>{bot.last_decision_summary ?? 'Start the bot to begin receiving AI analysis feedback.'}</span>
                       {bot.last_decision_at && <small>Checked {new Date(bot.last_decision_at).toLocaleTimeString()}</small>}
                     </div>
                   </div>

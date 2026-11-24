@@ -11,7 +11,7 @@ import type { BrokerAccount, BrokerSymbol } from '../../../shared/types';
 const steps = [
   'Broker Account',
   'Instruments',
-  'Trading Strategy',
+  'AI Analysis',
   'Risk Settings',
   'Review & Create',
 ];
@@ -30,9 +30,7 @@ export function BotCreate(): JSX.Element {
 
   const [form, setForm] = useState({
     name: '',
-    strategyName: 'ema_crossover',
-    fastPeriod: 9,
-    slowPeriod: 21,
+    strategyName: 'ai_adaptive',
     lotSize: 0.01,
     entryBatchSize: 1,
     maxConcurrentPositions: 1,
@@ -101,20 +99,6 @@ export function BotCreate(): JSX.Element {
       if (selectedSymbols.length === 0) { setError('Select at least one instrument.'); return false; }
       if (selectedSymbols.length > 20) { setError('A bot can use up to 20 instruments.'); return false; }
     }
-    if (step === 2) {
-      if (!Number.isInteger(form.fastPeriod) || form.fastPeriod < 2 || form.fastPeriod > 100) {
-        setError('The fast EMA period must be a whole number between 2 and 100.');
-        return false;
-      }
-      if (!Number.isInteger(form.slowPeriod) || form.slowPeriod < 5 || form.slowPeriod > 300) {
-        setError('The slow EMA period must be a whole number between 5 and 300.');
-        return false;
-      }
-      if (form.fastPeriod >= form.slowPeriod) {
-        setError('The fast EMA period must be smaller than the slow EMA period.');
-        return false;
-      }
-    }
     if (step === 3) {
       if (form.dailyLossLimit <= 0 || form.drawdownLimit <= 0 || form.lotSize <= 0) {
         setError('Lot size and loss limits must be greater than zero.');
@@ -163,11 +147,7 @@ export function BotCreate(): JSX.Element {
         brokerAccountId: brokerId,
         name: form.name.trim(),
         strategyName: form.strategyName,
-        strategyParams: {
-          fastPeriod: form.fastPeriod,
-          slowPeriod: form.slowPeriod,
-          minSpreadPoints: form.maxSpreadPoints,
-        },
+        strategyParams: {},
         brokerSymbolIds: selectedSymbols,
         lotSize: form.lotSize,
         entryBatchSize: form.entryBatchSize,
@@ -193,7 +173,7 @@ export function BotCreate(): JSX.Element {
       {resourceError && <div className="bot-create-alert" role="status">{resourceError}</div>}
       <header className="bot-create-heading">
         <Link to="/app/bots" className="bot-create-back"><span>‹</span> Back to bots</Link>
-        <div><span className="bot-create-eyebrow">BOT CONFIGURATION</span><h1>Create a Trading Bot</h1><p>Configure your strategy and risk controls before creating the bot.</p></div>
+        <div><span className="bot-create-eyebrow">BOT CONFIGURATION</span><h1>Create a Trading Bot</h1><p>Configure AI analysis and risk controls before creating the bot.</p></div>
       </header>
 
       <ol className={`bot-create-steps step-${step}`} aria-label="Bot setup progress">
@@ -267,43 +247,14 @@ export function BotCreate(): JSX.Element {
 
           {step === 2 && (
             <section className="bot-create-card">
-              <div className="bot-create-card-heading"><span className="bot-create-card-icon bot-strategy-icon"><Icon name="analytics" size={21} /></span><div><h2>Trading Strategy Configuration</h2><p>Configure the supported strategy’s crossover parameters.</p></div></div>
-              <div className="bot-strategy-layout">
-                <div className="bot-strategy-controls">
-                  <div className="bot-config-block">
-                    <div className="bot-config-heading"><h3>Strategy</h3><span>Currently supported</span></div>
-                    <button type="button" className="bot-strategy-tile selected" onClick={() => set('strategyName', 'ema_crossover')}>
-                      <span className="strategy-tile-icon"><Icon name="performance" size={21} /></span>
-                      <span><strong>EMA Crossover</strong><small>Momentum crossover strategy</small></span>
-                      <span className="strategy-tile-check">✓</span>
-                    </button>
-                    <p className="bot-config-note">This strategy compares fast and slow exponential moving averages. Other strategies are not available yet.</p>
-                  </div>
-                  <div className="bot-strategy-params">
-                    <Input label="Fast EMA period" type="number" min="2" max="100" step="1" value={String(form.fastPeriod)} onChange={(event) => set('fastPeriod', Number(event.target.value))} />
-                    <Input label="Slow EMA period" type="number" min="5" max="300" step="1" value={String(form.slowPeriod)} onChange={(event) => set('slowPeriod', Number(event.target.value))} />
-                  </div>
-                  <div className="bot-strategy-explainer">
-                    <Icon name="shield" size={18} />
-                    <p>Fast EMA crossing above the slow EMA produces a buy signal; crossing below produces a sell signal. Signals still pass through your risk limits.</p>
-                  </div>
-                </div>
-                <aside className="bot-strategy-preview">
-                  <div className="bot-preview-heading"><h3>Strategy Preview</h3><span>Illustrative</span></div>
-                  <svg viewBox="0 0 340 145" role="img" aria-label="Illustrative EMA crossover chart, not live market data">
-                    <g className="bot-preview-grid">{[20, 55, 90, 125].map((y) => <line key={y} x1="0" x2="340" y1={y} y2={y} />)}{[40, 100, 160, 220, 280].map((x) => <line key={x} x1={x} x2={x} y1="8" y2="137" />)}</g>
-                    <path className="bot-preview-ema-slow" d="M5 108 C45 99 59 101 86 83 S125 74 148 79 183 91 206 70 245 62 266 48 308 40 335 28" />
-                    <path className="bot-preview-ema-fast" d="M5 119 C33 111 51 84 78 90 S112 102 139 71 171 67 193 84 229 94 252 54 287 50 306 34 326 38 335 20" />
-                    {[{ x: 25, y: 80, h: 35, up: true }, { x: 60, y: 68, h: 29, up: true }, { x: 95, y: 74, h: 38, up: false }, { x: 130, y: 63, h: 31, up: true }, { x: 165, y: 72, h: 44, up: false }, { x: 200, y: 51, h: 34, up: true }, { x: 235, y: 45, h: 28, up: true }, { x: 270, y: 38, h: 39, up: false }, { x: 305, y: 24, h: 33, up: true }].map((candle, index) => (
-                      <g key={index} className={candle.up ? 'bot-preview-candle-up' : 'bot-preview-candle-down'}>
-                        <line x1={candle.x + 7} x2={candle.x + 7} y1={candle.y - 7} y2={candle.y + candle.h + 7} />
-                        <rect x={candle.x} y={candle.y} width="14" height={candle.h} rx="1" />
-                      </g>
-                    ))}
-                  </svg>
-                  <p>Illustration only; not a live chart or a performance forecast.</p>
-                  <div className="bot-preview-rules"><strong>Signal behavior</strong><span>• Buy on bullish crossover</span><span>• Sell on bearish crossover</span><span>• Risk controls may block entries</span></div>
-                </aside>
+              <div className="bot-create-card-heading"><span className="bot-create-card-icon bot-strategy-icon"><Icon name="analytics" size={21} /></span><div><h2>AI Adaptive Analysis</h2><p>There is no fixed entry strategy to configure.</p></div></div>
+              <div className="bot-strategy-explainer">
+                <Icon name="analytics" size={18} />
+                <p>The configured AI analyzes one-minute market data, live quotes, trend, momentum, and volatility across all selected instruments every two minutes. It can recommend BUY, SELL, HOLD, or NO_TRADE; volatility alone is never treated as an entry signal.</p>
+              </div>
+              <div className="bot-risk-note">
+                <Icon name="shield" size={18} />
+                <p>AI must be enabled and configured on the server. Each bot cycle is one AI assessment (2 credits). Missing or invalid AI responses never place orders, and every proposed trade remains subject to your independent risk limits.</p>
               </div>
             </section>
           )}
@@ -334,12 +285,12 @@ export function BotCreate(): JSX.Element {
               <div className="bot-create-card-heading"><span className="bot-create-card-icon"><Icon name="shield" size={21} /></span><div><h2>Review Your Bot</h2><p>Check your configuration before creating the bot.</p></div></div>
               <div className="bot-review-identity">
                 <span className="bot-review-emblem"><Icon name="bot" size={25} /></span>
-                <div><strong>{form.name || 'Unnamed bot'}</strong><span>{form.strategyName.replace(/_/g, ' ')} · {selectedBroker?.label ?? 'No account selected'}</span></div>
+                <div><strong>{form.name || 'Unnamed bot'}</strong><span>AI Adaptive · {selectedBroker?.label ?? 'No account selected'}</span></div>
                 <span className={`bot-mode-tag ${selectedBroker?.mode ?? 'demo'}`}>{selectedBroker?.mode ?? '—'}</span>
               </div>
               <div className="bot-review-grid">
                 <div className="bot-review-group"><h3>Instruments <span>{selectedInstrumentRows.length}</span></h3>{selectedInstrumentRows.length ? <div className="bot-review-tags">{selectedInstrumentRows.map((symbol) => <span key={symbol.id}>{symbol.canonical_symbol}</span>)}</div> : <p>No instruments selected.</p>}</div>
-                <div className="bot-review-group"><h3>Strategy parameters</h3><dl><div><dt>Fast EMA</dt><dd>{form.fastPeriod}</dd></div><div><dt>Slow EMA</dt><dd>{form.slowPeriod}</dd></div><div><dt>Maximum spread</dt><dd>{form.maxSpreadPoints} points</dd></div></dl></div>
+                <div className="bot-review-group"><h3>AI analysis</h3><dl><div><dt>Market data</dt><dd>1-minute candles</dd></div><div><dt>Analysis cadence</dt><dd>Every 2 minutes</dd></div><div><dt>Assessment cost</dt><dd>2 credits per cycle</dd></div></dl></div>
                 <div className="bot-review-group"><h3>Position sizing</h3><dl><div><dt>Lot size</dt><dd>{form.lotSize}</dd></div><div><dt>Entry batch</dt><dd>{form.entryBatchSize}</dd></div><div><dt>Max positions</dt><dd>{form.maxConcurrentPositions}</dd></div></dl></div>
                 <div className="bot-review-group"><h3>Risk limits</h3><dl><div><dt>Daily loss</dt><dd>{form.dailyLossLimit}</dd></div><div><dt>Drawdown</dt><dd>{form.drawdownLimit}</dd></div><div><dt>Margin utilization</dt><dd>{form.marginUtilizationLimit}%</dd></div></dl></div>
               </div>
@@ -371,7 +322,7 @@ export function BotCreate(): JSX.Element {
             <div className="bot-summary-row"><span>Bot name</span><strong>{form.name.trim() || 'Not set'}</strong></div>
             <div className="bot-summary-row"><span>Broker account</span><strong>{selectedBroker?.label ?? 'Not selected'}</strong></div>
             <div className="bot-summary-row"><span>Instruments</span><strong>{selectedSymbols.length} selected</strong></div>
-            <div className="bot-summary-row"><span>Strategy</span><strong>EMA Crossover</strong></div>
+            <div className="bot-summary-row"><span>Analysis mode</span><strong>AI Adaptive</strong></div>
             <div className="bot-summary-row"><span>Risk controls</span><strong>4 configured</strong></div>
             <div className="bot-summary-disclaimer">Review all limits carefully. Trading can result in losses.</div>
           </section>
