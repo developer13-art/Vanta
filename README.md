@@ -6,7 +6,7 @@ Cloud-hosted autonomous AI trading platform for users' own MT4/MT5 broker accoun
 
 - TypeScript, React, Express, PostgreSQL
 - No Redis, no workers, no message brokers — PostgreSQL `SKIP LOCKED` job queue inside the main process
-- MetaApi for broker connectivity
+- MetaApi and FXAPIs for broker connectivity
 
 ## Requirements
 
@@ -49,7 +49,7 @@ This command only grants the first admin role and refuses to run if an admin alr
 - To enable Stripe, set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, then configure the Stripe webhook URL as `https://<your-domain>/api/payments/webhook/stripe`. Subscribe to `checkout.session.completed` and `checkout.session.async_payment_succeeded`.
 - Stripe bank transfers are offered only for currencies in `STRIPE_BANK_TRANSFER_CURRENCIES`; enable bank transfers for the Stripe account in its dashboard as well. Stripe account and country eligibility still applies.
 - `FLUTTERWAVE_CURRENCIES` should list only currencies enabled for the merchant account. `PAYMENT_FX_API_URL` defaults to ExchangeRate-API's free daily USD feed.
-- To enable FXAPIs, set the server-side `FXAPIS_API_KEY` from the [FXAPIs dashboard](https://fxapis.com/dashboard/keys). Keep the key out of client code. FXAPIs supports MT5 only; MetaApi remains the provider for MT4 and can also be chosen for MT5.
+- To enable FXAPIs, set the server-side `FXAPIS_API_KEY` from the [FXAPIs dashboard](https://fxapis.com/dashboard/keys). Keep the key out of client code. FXAPIs supports MT5 only; MetaApi remains the provider for MT4 and can also be chosen for MT5. FXAPIs accounts default to `warm_on_demand`; set `FXAPIS_ACCOUNT_MODE=always_on` only if the workspace plan includes always-on accounts.
 - Run `npm run db:init` after updating to add the payment transaction ID column and broker-provider fields.
 
 ## Testing

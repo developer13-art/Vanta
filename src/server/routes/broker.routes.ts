@@ -99,6 +99,9 @@ brokerRouter.post('/', requireAuth, validateBody(connectBrokerSchema), async (re
           throw Errors.conflict('FXAPIs could not connect this account. It may already be connected or require broker-side attention.');
         }
         if (err.status === 402) {
+          if (err.code === 'FEATURE_NOT_IN_PLAN') {
+            throw Errors.planRequired('The FXAPIs plan does not include always-on accounts. Use warm-on-demand mode or upgrade the FXAPIs plan.');
+          }
           throw Errors.unavailable('The FXAPIs workspace plan or quota does not allow this account connection.');
         }
         throw Errors.unavailable('FXAPIs could not connect the account. Check the FXAPIs service and try again.');

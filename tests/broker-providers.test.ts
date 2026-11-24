@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   placeMarketOrder: vi.fn(),
   getFxApisOrder: vi.fn(),
   getFxApisPositions: vi.fn(),
+  getFxApisAccountState: vi.fn(),
 }));
 
 vi.mock('../src/server/env', () => ({ env: state.env }));
@@ -16,7 +17,7 @@ vi.mock('../src/server/fxapis', () => ({
   connectAccount: state.connectFxApisAccount,
   disconnectAccount: vi.fn(),
   getAccountFigures: vi.fn(),
-  getAccountState: vi.fn(),
+  getAccountState: state.getFxApisAccountState,
   getCandles: vi.fn(),
   getOpenPositions: state.getFxApisPositions,
   getOrder: state.getFxApisOrder,
@@ -34,6 +35,7 @@ vi.mock('../src/server/metaapi', () => ({
 
 import {
   connectBrokerAccount,
+  getBrokerHealth,
   resolveFxApisOrder,
   getBrokerProviderOptions,
   getDefaultBrokerProvider,
@@ -73,6 +75,12 @@ describe('broker provider selection', () => {
       login: '10002', password: 'pass', server: 'Broker-Demo', label: 'MT4 Demo', platform: 'mt4',
     })).resolves.toBe('meta-account');
     expect(state.provisionAccount).toHaveBeenCalledWith(expect.objectContaining({ platform: 'mt4' }));
+  });
+
+  it('treats a warm-on-demand standby account as connected and available', async () => {
+    state.getFxApisAccountState.mockResolvedValue({ state: 'standby', detail: null });
+    await expect(getBrokerHealth('fxapis', 'fx-account'))
+      .resolves.toMatchObject({ status: 'connected', info: null });
   });
 
   it('does not confirm FXAPIs orders without a real fill price and volume', async () => {

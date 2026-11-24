@@ -71,7 +71,7 @@ export interface BrokerProviderOption {
 
 const FXAPIS_READY_STATES = new Set(['ready', 'executing']);
 const FXAPIS_PENDING_STATES = new Set([
-  'created', 'provisioning', 'standby', 'starting', 'connecting',
+  'created', 'provisioning', 'starting', 'connecting',
   'synchronizing', 'cooling', 'reconnecting',
 ]);
 
@@ -148,6 +148,9 @@ export async function getBrokerHealth(provider: BrokerProvider, providerAccountI
   if (FXAPIS_READY_STATES.has(accountState.state)) {
     const info = await getAccountFigures(providerAccountId);
     return { status: 'connected', info, detail: accountState.detail };
+  }
+  if (accountState.state === 'standby') {
+    return { status: 'connected', info: null, detail: 'FXAPIs account is idle and will reconnect when needed.' };
   }
   if (FXAPIS_PENDING_STATES.has(accountState.state)) {
     return {

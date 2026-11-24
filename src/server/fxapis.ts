@@ -86,7 +86,14 @@ export async function connectAccount(args: {
 }): Promise<string> {
   const data = requireRecord(await requestData('/v1/accounts', {
     method: 'POST',
-    body: { platform: 'mt5', login: args.login, password: args.password, server: args.server, label: args.label, mode: 'always_on' },
+    body: {
+      platform: 'mt5',
+      login: args.login,
+      password: args.password,
+      server: args.server,
+      label: args.label,
+      mode: env.FXAPIS_ACCOUNT_MODE,
+    },
   }));
   if (typeof data.id !== 'string' || data.id.length === 0) {
     throw new FxApisError('FXAPIs did not return an account ID.', 502, 'INVALID_RESPONSE');

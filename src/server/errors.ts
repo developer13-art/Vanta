@@ -20,6 +20,7 @@ export const Errors = {
   tooMany: (msg = 'Too many requests') => new AppError('RATE_LIMITED', 429, msg),
   internal: (msg = 'Internal server error') => new AppError('INTERNAL', 500, msg),
   unavailable: (msg = 'Service unavailable') => new AppError('UNAVAILABLE', 503, msg),
+  planRequired: (msg: string) => new AppError('PLAN_REQUIRED', 402, msg),
   insufficientCredits: () => new AppError('INSUFFICIENT_CREDITS', 402, 'Insufficient credits'),
   riskRejected: (reason: string) => new AppError('RISK_REJECTED', 422, reason),
 };

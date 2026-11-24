@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   env: {
     FXAPIS_API_KEY: 'fx_test_key',
     FXAPIS_API_BASE_URL: 'https://api.fxapis.test',
+    FXAPIS_ACCOUNT_MODE: 'warm_on_demand',
   },
   fetch: vi.fn(),
 }));
@@ -32,6 +33,7 @@ describe('FXAPIs integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('fetch', state.fetch);
+    state.env.FXAPIS_ACCOUNT_MODE = 'warm_on_demand';
   });
 
   afterEach(() => vi.unstubAllGlobals());
@@ -51,8 +53,25 @@ describe('FXAPIs integration', () => {
     const [createUrl, createInit] = state.fetch.mock.calls[0] as [string, RequestInit];
     expect(createUrl).toBe('https://api.fxapis.test/v1/accounts');
     expect(createInit.headers).toMatchObject({ Authorization: 'Bearer fx_test_key' });
-    expect(JSON.parse(String(createInit.body))).toMatchObject({ platform: 'mt5', mode: 'always_on' });
+    expect(JSON.parse(String(createInit.body))).toMatchObject({ platform: 'mt5', mode: 'warm_on_demand' });
     expect(state.fetch.mock.calls[1]?.[0]).toBe('https://api.fxapis.test/v1/accounts/fx-account-1/warm');
+  });
+
+  it('uses always-on mode only when explicitly configured', async () => {
+    state.env.FXAPIS_ACCOUNT_MODE = 'always_on';
+    state.fetch
+      .mockResolvedValueOnce(response({ data: { id: 'fx-account-2' } }, 201))
+      .mockResolvedValueOnce(response({ data: { state: 'starting' } }, 202));
+
+    await connectAccount({
+      login: '12345',
+      password: 'secret',
+      server: 'Broker-Demo',
+      label: 'Demo',
+    });
+
+    const [, init] = state.fetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toMatchObject({ mode: 'always_on' });
   });
 
   it('normalizes symbols and candles from FXAPIs responses', async () => {
