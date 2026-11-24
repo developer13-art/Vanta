@@ -98,10 +98,10 @@ export async function isHalted(opts: {
       WHERE deactivated_at IS NULL
         AND (
           scope = 'global'
-          OR (scope = 'user' AND scope_id = $1)
-          OR (scope = 'account' AND scope_id = $2)
-          OR (scope = 'broker' AND scope_id = $3)
-          OR (scope = 'strategy' AND scope_id = $4)
+          OR (scope = 'user' AND scope_id = $1::text)
+          OR (scope = 'account' AND scope_id = $2::text)
+          OR (scope = 'broker' AND scope_id = $3::text)
+          OR (scope = 'strategy' AND scope_id = $4::text)
         )
       LIMIT 1`,
     [opts.userId, opts.brokerAccountId, opts.brokerName, opts.strategyName],

@@ -518,7 +518,7 @@ CREATE INDEX IF NOT EXISTS audit_log_target_idx ON audit_log (target_type, targe
 CREATE TABLE IF NOT EXISTS emergency_controls (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   scope         TEXT NOT NULL CHECK (scope IN ('global','symbol','strategy','user','account','broker')),
-  scope_id      UUID,
+  scope_id      TEXT,
   action        TEXT NOT NULL CHECK (action IN ('halt_new_entries','halt_all','close_all')),
   reason        TEXT NOT NULL,
   activated_by  UUID NOT NULL REFERENCES users(id),
@@ -526,6 +526,9 @@ CREATE TABLE IF NOT EXISTS emergency_controls (
   deactivated_at TIMESTAMPTZ,
   deactivated_by UUID REFERENCES users(id)
 );
+
+ALTER TABLE emergency_controls
+  ALTER COLUMN scope_id TYPE TEXT USING scope_id::text;
 
 CREATE INDEX IF NOT EXISTS emergency_controls_active_idx
   ON emergency_controls (scope, scope_id) WHERE deactivated_at IS NULL;
