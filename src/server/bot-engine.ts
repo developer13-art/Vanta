@@ -407,6 +407,7 @@ export async function runBotTick(botId: string): Promise<void> {
 
   const assessmentSignals = new Map<string, StrategySignal>();
   let assessmentFailureReason: string | null = null;
+  let assessmentFailureDetail: string | null = null;
   if (assessmentTargets.length > 0) {
     if (!isAiEnabled()) {
       assessmentFailureReason = 'ai_disabled';
@@ -462,6 +463,7 @@ export async function runBotTick(botId: string): Promise<void> {
           });
         } catch (error) {
           assessmentFailureReason = 'ai_assessment_unavailable';
+          assessmentFailureDetail = error instanceof Error ? error.message.slice(0, 250) : 'AI provider request failed.';
           logger.warn({ err: error, botId: bot.id }, 'Bot AI market assessment failed');
         }
 
@@ -606,6 +608,7 @@ export async function runBotTick(botId: string): Promise<void> {
     if (!signal) {
       await saveNoTrade(bot, instrument, candleTime, assessmentFailureReason ?? 'ai_assessment_unavailable', {
         quote: quoteSummary,
+        detail: assessmentFailureDetail,
       });
       continue;
     }

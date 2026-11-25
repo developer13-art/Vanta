@@ -2,9 +2,10 @@ import { Router } from 'express';
 import { query, withTransaction } from '../db';
 import { Errors } from '../errors';
 import { requireAuth, validateBody } from '../middleware';
-import { createBotSchema, closePositionsSchema, closeAllSchema } from '../schema';
+import { createBotSchema, updateBotSchema, closePositionsSchema, closeAllSchema } from '../schema';
 import { closePosition } from '../execution';
 import { deleteBotForUser } from '../bot-deletion';
+import { updateBotConfiguration } from '../bot-configuration';
 
 export const botRouter = Router();
 
@@ -143,6 +144,19 @@ botRouter.get('/:id', requireAuth, async (req, res, next) => {
       openPositions: positions.rows,
       recentDecisions: decisions.rows,
     });
+  } catch (err) { next(err); }
+});
+
+botRouter.put('/:id', requireAuth, validateBody(updateBotSchema), async (req, res, next) => {
+  try {
+    const botId = req.params.id;
+    if (!botId) throw Errors.notFound();
+    await updateBotConfiguration(
+      botId,
+      req.userId!,
+      req.body as typeof updateBotSchema._type,
+    );
+    res.json({ ok: true });
   } catch (err) { next(err); }
 });
 

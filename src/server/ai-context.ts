@@ -62,7 +62,14 @@ export async function getAiAssessments(context: {
   });
 
   if (!response.ok) {
-    const hint = response.status === 404 ? ' Check AI_PROVIDER_URL and AI_MODEL.' : '';
+    const hints: Record<number, string> = {
+      400: ' Check that AI_MODEL supports chat completions and JSON responses.',
+      401: ' Check the AI_API_KEY configured on the server.',
+      403: ' Check that the AI_API_KEY is authorized to use AI_MODEL.',
+      404: ' Check AI_PROVIDER_URL and AI_MODEL.',
+      429: ' The AI provider rate limit or account quota was reached.',
+    };
+    const hint = hints[response.status] ?? (response.status >= 500 ? ' The AI provider is temporarily unavailable.' : '');
     throw new Error(`AI request failed: ${response.status}.${hint}`);
   }
   const responseBody: unknown = await response.json();

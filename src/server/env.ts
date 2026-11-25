@@ -63,7 +63,7 @@ const EnvSchema = z.object({
   AI_PROVIDER_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
   AI_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
   AI_MODEL: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
-  AI_TIMEOUT_MS: z.coerce.number().int().positive().default(8000),
+  AI_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

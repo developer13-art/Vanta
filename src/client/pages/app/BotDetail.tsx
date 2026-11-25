@@ -3,10 +3,27 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api, ApiRequestError } from '../../api';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
+import { Input } from '../../components/Input';
+import { Select } from '../../components/Select';
 import { useToast } from '../../toast-context';
 import { Stat } from '../../components/Stat';
+import type { BrokerSymbol, StopBehavior } from '../../../shared/types';
 
 type Tab = 'overview' | 'positions' | 'decisions' | 'config';
+
+interface BotEditForm {
+  name: string;
+  brokerSymbolIds: string[];
+  lotSize: number;
+  entryBatchSize: number;
+  maxConcurrentPositions: number;
+  dailyLossLimit: number;
+  drawdownLimit: number;
+  marginUtilizationLimit: number;
+  maxSpreadPoints: number | null;
+  cooldownSeconds: number;
+  stopBehavior: StopBehavior;
+}
 
 export function BotDetail(): JSX.Element {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +33,10 @@ export function BotDetail(): JSX.Element {
   const [tab, setTab] = useState<Tab>('overview');
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [editingConfig, setEditingConfig] = useState(false);
+  const [editForm, setEditForm] = useState<BotEditForm | null>(null);
+  const [editSymbols, setEditSymbols] = useState<BrokerSymbol[]>([]);
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -54,6 +75,63 @@ export function BotDetail(): JSX.Element {
     }
     catch (err) { toast.error(err instanceof ApiRequestError ? err.message : `${label} failed`); }
     finally { setBusy(false); }
+  };
+
+  const canEditConfig = ['ready', 'paused', 'stopped', 'management_only', 'error'].includes(bot.state);
+  const startEditingConfig = async () => {
+    setBusy(true);
+    setEditError(null);
+    try {
+      const symbols = await api.brokerSymbols(bot.broker_account_id);
+      setEditSymbols(symbols);
+      setEditForm({
+        name: bot.name,
+        brokerSymbolIds: instruments.map((instrument) => instrument.id),
+        lotSize: Number(bot.lot_size),
+        entryBatchSize: bot.entry_batch_size,
+        maxConcurrentPositions: bot.max_concurrent_positions,
+        dailyLossLimit: Number(bot.daily_loss_limit),
+        drawdownLimit: Number(bot.drawdown_limit),
+        marginUtilizationLimit: Number(bot.margin_utilization_limit),
+        maxSpreadPoints: bot.max_spread_points,
+        cooldownSeconds: bot.cooldown_seconds,
+        stopBehavior: bot.stop_behavior,
+      });
+      setEditingConfig(true);
+    } catch (error) {
+      toast.error(error instanceof ApiRequestError ? error.message : "Could not load this account's instruments.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const updateEditForm = (changes: Partial<BotEditForm>) => {
+    setEditForm((current) => current ? { ...current, ...changes } : current);
+  };
+  const saveConfiguration = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editForm) return;
+    if (!canEditConfig) {
+      setEditError('Pause or stop the bot before editing its configuration.');
+      return;
+    }
+    if (editForm.brokerSymbolIds.length === 0) {
+      setEditError('Select at least one instrument.');
+      return;
+    }
+    setBusy(true);
+    setEditError(null);
+    try {
+      await api.updateBot(bot.id, editForm);
+      const refreshed = await api.getBot(bot.id);
+      setData(refreshed);
+      setEditingConfig(false);
+      setEditForm(null);
+      toast.success('Bot configuration updated');
+    } catch (error) {
+      setEditError(error instanceof ApiRequestError ? error.message : 'Bot configuration could not be updated.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -167,17 +245,89 @@ export function BotDetail(): JSX.Element {
 
       {tab === 'config' && (
         <div className="card">
-          <div className="card-title">Configuration</div>
-          <table className="table">
-            <tbody>
-              <tr><td>Daily loss limit</td><td>{bot.daily_loss_limit}</td></tr>
-              <tr><td>Drawdown limit</td><td>{bot.drawdown_limit}</td></tr>
-              <tr><td>Margin utilization limit</td><td>{bot.margin_utilization_limit}%</td></tr>
-              <tr><td>Max spread</td><td>{bot.max_spread_points ?? '—'}</td></tr>
-              <tr><td>Cooldown</td><td>{bot.cooldown_seconds}s</td></tr>
-              <tr><td>Stop behavior</td><td>{bot.stop_behavior}</td></tr>
-            </tbody>
-          </table>
+          <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <span>Configuration</span>
+            {!editingConfig && (
+              <Button variant="secondary" disabled={!canEditConfig || busy} loading={busy} onClick={() => { void startEditingConfig(); }}>
+                Edit configuration
+              </Button>
+            )}
+          </div>
+          {editingConfig && editForm ? (
+            <form onSubmit={(event) => { void saveConfiguration(event); }}>
+              <p style={{ marginBottom: 14, color: 'var(--text-muted)' }}>
+                Pause or stop the bot before saving. Existing positions are not closed by configuration changes.
+              </p>
+              <div className="grid-3">
+                <Input label="Bot name" required minLength={2} maxLength={120} value={editForm.name}
+                  onChange={(event) => updateEditForm({ name: event.target.value })} />
+                <Input label="Lot size per order" type="number" step="0.01" min="0.0001" required value={editForm.lotSize}
+                  onChange={(event) => updateEditForm({ lotSize: Number(event.target.value) })} />
+                <Input label="Entry batch size" type="number" min="1" max="20" required value={editForm.entryBatchSize}
+                  onChange={(event) => updateEditForm({ entryBatchSize: Number(event.target.value) })} />
+                <Input label="Maximum concurrent positions" type="number" min="1" max="50" required value={editForm.maxConcurrentPositions}
+                  onChange={(event) => updateEditForm({ maxConcurrentPositions: Number(event.target.value) })} />
+                <Input label="Daily loss limit" type="number" step="0.01" min="0.01" required value={editForm.dailyLossLimit}
+                  onChange={(event) => updateEditForm({ dailyLossLimit: Number(event.target.value) })} />
+                <Input label="Drawdown limit" type="number" step="0.01" min="0.01" required value={editForm.drawdownLimit}
+                  onChange={(event) => updateEditForm({ drawdownLimit: Number(event.target.value) })} />
+                <Input label="Margin utilization limit (%)" type="number" min="1" max="100" required value={editForm.marginUtilizationLimit}
+                  onChange={(event) => updateEditForm({ marginUtilizationLimit: Number(event.target.value) })} />
+                <Input label="Maximum spread (points)" type="number" min="0" value={editForm.maxSpreadPoints ?? ''}
+                  onChange={(event) => updateEditForm({ maxSpreadPoints: event.target.value === '' ? null : Number(event.target.value) })} />
+                <Input label="Cooldown after a trade (seconds)" type="number" min="0" max="86400" required value={editForm.cooldownSeconds}
+                  onChange={(event) => updateEditForm({ cooldownSeconds: Number(event.target.value) })} />
+                <Select label="When stopping the bot" value={editForm.stopBehavior} onChange={(event) => updateEditForm({ stopBehavior: event.target.value as StopBehavior })} options={[
+                  { value: 'stop_new_manage_existing', label: 'Stop new trades; manage existing' },
+                  { value: 'close_all_and_stop', label: 'Close all positions and stop' },
+                  { value: 'emergency_halt', label: 'Emergency halt' },
+                ]} />
+              </div>
+              <h3 style={{ margin: '18px 0 10px' }}>Instruments</h3>
+              <div className="bot-instrument-grid">
+                {editSymbols.map((symbol) => {
+                  const selected = editForm.brokerSymbolIds.includes(symbol.id);
+                  return (
+                    <label className={`bot-instrument-option${selected ? ' selected' : ''}`} key={symbol.id}>
+                      <input type="checkbox" checked={selected} onChange={(event) => updateEditForm({
+                        brokerSymbolIds: event.target.checked
+                          ? [...editForm.brokerSymbolIds, symbol.id]
+                          : editForm.brokerSymbolIds.filter((symbolId) => symbolId !== symbol.id),
+                      })} />
+                      <span className="bot-instrument-symbol">{symbol.canonical_symbol.slice(0, 1)}</span>
+                      <span><strong>{symbol.canonical_symbol}</strong><small>{symbol.category.replace(/_/g, ' ')}</small></span>
+                    </label>
+                  );
+                })}
+              </div>
+              {editError && <div className="bots-alert" role="alert" style={{ marginTop: 12 }}>{editError}</div>}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+                <Button type="button" variant="secondary" disabled={busy} onClick={() => { setEditingConfig(false); setEditForm(null); setEditError(null); }}>
+                  Cancel
+                </Button>
+                <Button type="submit" loading={busy}>Save configuration</Button>
+              </div>
+            </form>
+          ) : (
+            <>
+              {!canEditConfig && <p style={{ marginBottom: 12, color: 'var(--text-muted)' }}>Pause or stop this bot before editing its configuration.</p>}
+              <table className="table">
+                <tbody>
+                  <tr><td>Bot name</td><td>{bot.name}</td></tr>
+                  <tr><td>Lot size</td><td>{bot.lot_size}</td></tr>
+                  <tr><td>Entry batch size</td><td>{bot.entry_batch_size}</td></tr>
+                  <tr><td>Maximum concurrent positions</td><td>{bot.max_concurrent_positions}</td></tr>
+                  <tr><td>Daily loss limit</td><td>{bot.daily_loss_limit}</td></tr>
+                  <tr><td>Drawdown limit</td><td>{bot.drawdown_limit}</td></tr>
+                  <tr><td>Margin utilization limit</td><td>{bot.margin_utilization_limit}%</td></tr>
+                  <tr><td>Max spread</td><td>{bot.max_spread_points ?? '—'}</td></tr>
+                  <tr><td>Cooldown</td><td>{bot.cooldown_seconds}s</td></tr>
+                  <tr><td>Stop behavior</td><td>{bot.stop_behavior}</td></tr>
+                  <tr><td>Instruments</td><td>{instruments.map((instrument) => instrument.canonical_symbol).join(', ') || '—'}</td></tr>
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
       )}
     </div>

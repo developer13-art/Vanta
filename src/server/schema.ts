@@ -57,6 +57,14 @@ export const createBotSchema = z.object({
   stopBehavior: z.enum(['stop_new_manage_existing', 'close_all_and_stop', 'emergency_halt']),
 });
 
+export const updateBotSchema = createBotSchema.omit({
+  brokerAccountId: true,
+  strategyName: true,
+  strategyParams: true,
+}).extend({
+  maxSpreadPoints: z.number().int().min(0).nullable(),
+});
+
 export const closePositionsSchema = z.object({
   positionIds: z.array(z.string().uuid()).min(1).max(100),
 });

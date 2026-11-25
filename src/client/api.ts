@@ -171,7 +171,11 @@ export const api = {
   // ---- Bots ----
   listBots: () => request<BotSummary[]>('/api/bots'),
   getBot: (id: string) => request<{
-    bot: BotSummary & { strategy_params: Record<string, unknown>; trading_sessions: Record<string, unknown> | null };
+    bot: BotSummary & {
+      broker_account_id: string;
+      strategy_params: Record<string, unknown>;
+      trading_sessions: Record<string, unknown> | null;
+    };
     instruments: Array<{ id: string; broker_symbol: string; canonical_symbol: string; category: string }>;
     openPositions: Position[];
     recentDecisions: Array<{
@@ -187,6 +191,12 @@ export const api = {
     dailyLossLimit: number; drawdownLimit: number; marginUtilizationLimit: number;
     maxSpreadPoints?: number; cooldownSeconds: number; stopBehavior: string;
   }) => request<{ id: string }>('/api/bots', { method: 'POST', body }),
+  updateBot: (id: string, body: {
+    name: string; brokerSymbolIds: string[]; lotSize: number; entryBatchSize: number;
+    maxConcurrentPositions: number; dailyLossLimit: number; drawdownLimit: number;
+    marginUtilizationLimit: number; maxSpreadPoints: number | null; cooldownSeconds: number;
+    stopBehavior: string;
+  }) => request<{ ok: boolean }>(`/api/bots/${id}`, { method: 'PUT', body }),
   startBot: (id: string) => request<{ ok: boolean }>(`/api/bots/${id}/start`, { method: 'POST' }),
   pauseBot: (id: string) => request<{ ok: boolean }>(`/api/bots/${id}/pause`, { method: 'POST' }),
   stopBot: (id: string, action: 'stop_new_manage_existing' | 'close_all_and_stop') =>

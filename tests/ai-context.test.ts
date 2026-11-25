@@ -114,4 +114,20 @@ describe('AI batch assessments', () => {
     await expect(getAiAssessments(context)).rejects.toThrow('disabled or not configured');
     expect(state.fetch).not.toHaveBeenCalled();
   });
+
+  it('includes actionable provider guidance for common AI endpoint failures', async () => {
+    const cases = [
+      [400, 'supports chat completions and JSON'],
+      [401, 'AI_API_KEY'],
+      [403, 'authorized to use AI_MODEL'],
+      [404, 'AI_PROVIDER_URL and AI_MODEL'],
+      [429, 'rate limit or account quota'],
+      [503, 'temporarily unavailable'],
+    ] as const;
+
+    for (const [status, message] of cases) {
+      state.fetch.mockResolvedValueOnce({ ok: false, status });
+      await expect(getAiAssessments(context)).rejects.toThrow(message);
+    }
+  });
 });
