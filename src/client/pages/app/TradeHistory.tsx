@@ -41,6 +41,7 @@ export function TradeHistory(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncWarning, setSyncWarning] = useState(false);
   const [errorAction, setErrorAction] = useState<'load' | 'export'>('load');
   const [retryVersion, setRetryVersion] = useState(0);
 
@@ -48,19 +49,28 @@ export function TradeHistory(): JSX.Element {
     let active = true;
     setLoading(true);
     setError(null);
+    setSyncWarning(false);
     setErrorAction('load');
     const from = days === 'all' ? undefined : new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-    Promise.all([
-      api.listHistory({ from }),
-      api.getAnalyticsSummary(days),
-      api.getDailyPnl(days),
-    ]).then(([historyRows, analytics, dailyResults]) => {
+    const loadHistory = async () => {
+      try {
+        const syncResult = await api.syncTradeHistory();
+        if (active && syncResult.failedAccounts > 0) setSyncWarning(true);
+      } catch {
+        if (active) setSyncWarning(true);
+      }
+      const [historyRows, analytics, dailyResults] = await Promise.all([
+        api.listHistory({ from }),
+        api.getAnalyticsSummary(days),
+        api.getDailyPnl(days),
+      ]);
       if (!active) return;
       setRows(historyRows);
       setSummary(analytics);
       setDaily(dailyResults);
       setBotFilter('');
-    }).catch((cause: unknown) => {
+    };
+    void loadHistory().catch((cause: unknown) => {
       if (!active) return;
       setError(cause instanceof ApiRequestError ? cause.message : 'Trade history could not be loaded.');
     }).finally(() => { if (active) setLoading(false); });
@@ -121,6 +131,7 @@ export function TradeHistory(): JSX.Element {
       </header>
 
       {error && <div className="trade-history-alert" role="alert"><span>{error}</span><button type="button" onClick={() => errorAction === 'export' ? exportCsv() : setRetryVersion((value) => value + 1)}>{errorAction === 'export' ? 'Retry export' : 'Retry'}</button></div>}
+      {syncWarning && !error && <div className="trade-history-alert" role="status"><span>FXAPIs history could not be refreshed for one or more accounts. Showing saved trades.</span><button type="button" onClick={() => setRetryVersion((value) => value + 1)}>Retry</button></div>}
       {loading ? (
         <div className="trade-history-loading"><span className="dashboard-spinner" /> Loading trade history…</div>
       ) : summary && (

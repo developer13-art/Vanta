@@ -2,8 +2,17 @@ import { Router } from 'express';
 import { query } from '../db';
 import { requireAuth } from '../middleware';
 import { Errors } from '../errors';
+import { syncFxApisTradeHistory } from '../broker-history';
 
 export const historyRouter = Router();
+
+historyRouter.post('/sync', requireAuth, async (req, res, next) => {
+  try {
+    if (!req.userId) throw Errors.unauthorized();
+    const result = await syncFxApisTradeHistory(req.userId);
+    res.json(result);
+  } catch (err) { next(err); }
+});
 
 historyRouter.get('/', requireAuth, async (req, res, next) => {
   try {
@@ -19,7 +28,8 @@ historyRouter.get('/', requireAuth, async (req, res, next) => {
     const rows = await query(
       `SELECT p.id, p.broker_ticket, p.side, p.volume, p.entry_price, p.close_price,
               p.realized_pl, p.commission, p.swap, p.opened_at, p.closed_at, p.closed_by,
-              b.id AS bot_id, b.name AS bot_name,
+              b.id AS bot_id,
+              CASE WHEN p.source = 'manual_broker' THEN 'Broker history' ELSE b.name END AS bot_name,
               s.broker_symbol, s.canonical_symbol,
               ba.id AS broker_account_id, ba.label AS broker_account_label
          FROM positions p
@@ -59,7 +69,9 @@ historyRouter.get('/:id', requireAuth, async (req, res, next) => {
       `SELECT p.id, p.broker_ticket, p.side, p.volume, p.entry_price, p.close_price,
               p.realized_pl, p.commission, p.swap, p.opened_at, p.closed_at, p.closed_by,
               p.floating_pl, p.current_price, p.management_state,
-              b.id AS bot_id, b.name AS bot_name, b.strategy_version_id,
+              b.id AS bot_id,
+              CASE WHEN p.source = 'manual_broker' THEN 'Broker history' ELSE b.name END AS bot_name,
+              b.strategy_version_id,
               sv.name AS strategy_name, sv.version AS strategy_version,
               s.broker_symbol, s.canonical_symbol,
               ba.id AS broker_account_id, ba.label AS broker_account_label
@@ -113,7 +125,8 @@ historyRouter.get('/export/csv', requireAuth, async (req, res, next) => {
     const rows = await query(
       `SELECT p.id, p.broker_ticket, s.canonical_symbol, p.side, p.volume,
               p.entry_price, p.close_price, p.realized_pl, p.opened_at, p.closed_at,
-              b.name AS bot_name, ba.label AS account_label
+              CASE WHEN p.source = 'manual_broker' THEN 'Broker history' ELSE b.name END AS bot_name,
+              ba.label AS account_label
          FROM positions p
          JOIN bots b ON b.id = p.bot_id
          JOIN broker_symbols s ON s.id = p.broker_symbol_id

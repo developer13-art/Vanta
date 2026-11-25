@@ -17,6 +17,7 @@ vi.mock('../src/server/logger', () => ({
 import {
   connectAccount,
   getCandles,
+  getAccountDeals,
   getQuotes,
   getSymbols,
   placeMarketOrder,
@@ -149,6 +150,57 @@ describe('FXAPIs integration', () => {
       { symbol: 'EURUSD.a', status: 'ok', spreadPoints: 12, stale: false, marketOpen: true, tradeMode: 'full' },
     ]);
     expect(String(state.fetch.mock.calls[0]?.[0])).toContain('/v1/accounts/fx-account-1/quotes?symbols=EURUSD.a');
+  });
+
+  it('reads deal history pages and preserves broker identifiers and realized amounts', async () => {
+    state.fetch.mockResolvedValueOnce(response({
+      data: [{
+        brokerDealId: 'deal-1',
+        brokerPositionId: 'position-1',
+        symbol: 'EURUSD.a',
+        dealType: 'buy',
+        entry: 'in',
+        volume: '0.10',
+        price: '1.08450',
+        profit: '0',
+        commission: '-0.25',
+        swap: null,
+        fee: '-0.01',
+        dealtAt: '2026-11-24T10:00:00Z',
+      }],
+      page: { hasMore: true, nextCursor: 'next page' },
+    })).mockResolvedValueOnce(response({
+      data: [],
+      page: { hasMore: false, nextCursor: null },
+    }));
+
+    const firstPage = await getAccountDeals('fx-account-1');
+    expect(firstPage).toMatchObject({
+      hasMore: true,
+      nextCursor: 'next page',
+      deals: [{
+        brokerDealId: 'deal-1',
+        brokerPositionId: 'position-1',
+        volume: 0.1,
+        price: 1.0845,
+        commission: -0.25,
+        fee: -0.01,
+      }],
+    });
+    await expect(getAccountDeals('fx-account-1', firstPage.nextCursor ?? undefined)).resolves.toMatchObject({
+      hasMore: false,
+      deals: [],
+    });
+    expect(String(state.fetch.mock.calls[0]?.[0])).toContain('/v1/accounts/fx-account-1/deals?limit=100');
+    expect(String(state.fetch.mock.calls[1]?.[0])).toContain('cursor=next+page');
+  });
+
+  it('rejects incomplete pagination metadata instead of silently truncating history', async () => {
+    state.fetch.mockResolvedValueOnce(response({ data: [], page: {} }));
+
+    await expect(getAccountDeals('fx-account-1')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
   });
 
   it('sends decimal-string volumes and idempotency keys for orders', async () => {

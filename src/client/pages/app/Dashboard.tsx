@@ -175,6 +175,7 @@ function Dashboard(): JSX.Element {
   const [performanceLoading, setPerformanceLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [performanceError, setPerformanceError] = useState(false);
+  const [historySyncWarning, setHistorySyncWarning] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -233,11 +234,21 @@ function Dashboard(): JSX.Element {
     let active = true;
     setPerformanceLoading(true);
     setPerformanceError(false);
-    Promise.allSettled([
-      api.getAnalyticsSummary(days),
-      api.getDailyPnl(days),
-      api.getDailyPnl(1),
-    ]).then(([summaryResult, dailyResult, todayResult]) => {
+    setHistorySyncWarning(false);
+    const loadPerformance = async () => {
+      try {
+        const syncResult = await api.syncTradeHistory();
+        if (active && syncResult.failedAccounts > 0) setHistorySyncWarning(true);
+      } catch {
+        if (active) setHistorySyncWarning(true);
+      }
+      return Promise.allSettled([
+        api.getAnalyticsSummary(days),
+        api.getDailyPnl(days),
+        api.getDailyPnl(1),
+      ]);
+    };
+    void loadPerformance().then(([summaryResult, dailyResult, todayResult]) => {
       if (!active) return;
       if (summaryResult.status === 'fulfilled') setSummary(summaryResult.value);
       if (dailyResult.status === 'fulfilled') setDailyPnl(dailyResult.value);
@@ -532,6 +543,7 @@ function Dashboard(): JSX.Element {
           ) : (
             <PerformanceChart data={dailyPnl} days={days} />
           )}
+          {historySyncWarning && <p className="market-data-note" role="status">FXAPIs history could not be refreshed for one or more accounts. Showing saved results.</p>}
           <div className="performance-summary">
             <div><span>Closed trades</span><strong>{performanceLoading || performanceError ? '—' : totalTrades.toLocaleString()}</strong></div>
             <div><span>Win rate</span><strong>{performanceLoading || performanceError ? '—' : winRate}</strong></div>

@@ -111,13 +111,24 @@ export function Performance(): JSX.Element {
   const [daily, setDaily] = useState<DailyPnl[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [syncWarning, setSyncWarning] = useState(false);
   const [retryVersion, setRetryVersion] = useState(0);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
-    Promise.all([api.getAnalyticsSummary(days), api.getDailyPnl(days)])
+    setSyncWarning(false);
+    const loadPerformance = async () => {
+      try {
+        const syncResult = await api.syncTradeHistory();
+        if (active && syncResult.failedAccounts > 0) setSyncWarning(true);
+      } catch {
+        if (active) setSyncWarning(true);
+      }
+      return Promise.all([api.getAnalyticsSummary(days), api.getDailyPnl(days)]);
+    };
+    loadPerformance()
       .then(([nextSummary, nextDaily]) => {
         if (!active) return;
         setSummary(nextSummary);
@@ -154,6 +165,7 @@ export function Performance(): JSX.Element {
       </header>
 
       {error && <div className="performance-alert" role="alert"><span>{error}</span><button type="button" onClick={() => setRetryVersion((value) => value + 1)}>Retry</button></div>}
+      {syncWarning && !error && <div className="performance-alert" role="status"><span>FXAPIs history could not be refreshed for one or more accounts. Showing saved results.</span><button type="button" onClick={() => setRetryVersion((value) => value + 1)}>Retry</button></div>}
       {loading ? (
         <div className="performance-loading"><span className="dashboard-spinner" /> Loading performance data…</div>
       ) : summary && (

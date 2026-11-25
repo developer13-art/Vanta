@@ -25,10 +25,10 @@ function numericValue(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function requestData(
+async function requestEnvelope(
   path: string,
   options: { method?: 'GET' | 'POST'; body?: JsonRecord; idempotencyKey?: string } = {},
-): Promise<unknown> {
+): Promise<JsonRecord> {
   if (!env.FXAPIS_API_KEY) {
     throw new FxApisError('FXAPIs is not configured on this server.', 503, 'NOT_CONFIGURED');
   }
@@ -70,7 +70,14 @@ async function requestData(
   if (!envelope || !('data' in envelope)) {
     throw new FxApisError('FXAPIs returned an invalid response.', 502, 'INVALID_RESPONSE');
   }
-  return envelope.data;
+  return envelope;
+}
+
+async function requestData(
+  path: string,
+  options: { method?: 'GET' | 'POST'; body?: JsonRecord; idempotencyKey?: string } = {},
+): Promise<unknown> {
+  return (await requestEnvelope(path, options)).data;
 }
 
 function requireRecord(value: unknown, message = 'FXAPIs returned incomplete account data.'): JsonRecord {
@@ -321,6 +328,69 @@ export async function getOpenPositions(accountId: string): Promise<Array<{
       swap: numericValue(row.swap),
     };
   });
+}
+
+export interface FxApiDeal {
+  brokerDealId: string;
+  brokerPositionId: string | null;
+  symbol: string | null;
+  dealType: string;
+  entry: string | null;
+  volume: number | null;
+  price: number | null;
+  profit: number | null;
+  commission: number | null;
+  swap: number | null;
+  fee: number | null;
+  dealtAt: string;
+}
+
+export async function getAccountDeals(accountId: string, cursor?: string): Promise<{
+  deals: FxApiDeal[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}> {
+  const params = new URLSearchParams({ limit: '100' });
+  if (cursor) params.set('cursor', cursor);
+  const envelope = await requestEnvelope(
+    `/v1/accounts/${encodeURIComponent(accountId)}/deals?${params.toString()}`,
+  );
+  if (!Array.isArray(envelope.data)) {
+    throw new FxApisError('FXAPIs returned an invalid deal history.', 502, 'INVALID_RESPONSE');
+  }
+  const page = requireRecord(envelope.page, 'FXAPIs returned invalid deal pagination data.');
+  if (typeof page.hasMore !== 'boolean'
+    || (page.hasMore && (typeof page.nextCursor !== 'string' || page.nextCursor.length === 0))) {
+    throw new FxApisError('FXAPIs returned invalid deal pagination data.', 502, 'INVALID_RESPONSE');
+  }
+  const deals = envelope.data.map((item) => {
+    const row = requireRecord(item, 'FXAPIs returned an invalid deal.');
+    if (typeof row.brokerDealId !== 'string' || typeof row.dealType !== 'string'
+      || typeof row.dealtAt !== 'string') {
+      throw new FxApisError('FXAPIs returned an incomplete deal.', 502, 'INVALID_RESPONSE');
+    }
+    return {
+      brokerDealId: row.brokerDealId,
+      brokerPositionId: typeof row.brokerPositionId === 'string' ? row.brokerPositionId : null,
+      symbol: typeof row.symbol === 'string' ? row.symbol : null,
+      dealType: row.dealType,
+      entry: typeof row.entry === 'string' ? row.entry : null,
+      volume: numericValue(row.volume),
+      price: numericValue(row.price),
+      profit: numericValue(row.profit),
+      commission: numericValue(row.commission),
+      swap: numericValue(row.swap),
+      fee: numericValue(row.fee),
+      dealtAt: row.dealtAt,
+    };
+  });
+  return {
+    deals,
+    hasMore: page.hasMore,
+    nextCursor: typeof page.nextCursor === 'string' && page.nextCursor.length > 0
+      ? page.nextCursor
+      : null,
+  };
 }
 
 export async function getCandles(

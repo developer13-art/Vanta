@@ -280,6 +280,8 @@ export const api = {
     request<DailyPnl[]>(`/api/analytics/daily-pnl?days=${days}`),
 
   // ---- Trade history ----
+  syncTradeHistory: () =>
+    request<{ imported: number; failedAccounts: number }>('/api/history/sync', { method: 'POST' }),
   listHistory: (params?: { brokerAccountId?: string; botId?: string; from?: string; to?: string }) => {
     const q = new URLSearchParams();
     if (params?.brokerAccountId) q.set('brokerAccountId', params.brokerAccountId);
