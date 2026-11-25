@@ -4,6 +4,7 @@ import { Errors } from '../errors';
 import { requireAuth, validateBody } from '../middleware';
 import { createBotSchema, closePositionsSchema, closeAllSchema } from '../schema';
 import { closePosition } from '../execution';
+import { deleteBotForUser } from '../bot-deletion';
 
 export const botRouter = Router();
 
@@ -207,15 +208,7 @@ botRouter.post('/:id/stop', requireAuth, async (req, res, next) => {
 
 botRouter.delete('/:id', requireAuth, async (req, res, next) => {
   try {
-    const open = await query<{ count: string }>(
-      `SELECT count(*) FROM positions p JOIN bots b ON b.id=p.bot_id
-        WHERE b.id=$1 AND b.user_id=$2 AND p.closed_at IS NULL`,
-      [req.params.id, req.userId],
-    );
-    if (Number(open.rows[0].count) > 0)
-      throw Errors.conflict('Close all positions before deleting this bot');
-    const del = await query(`DELETE FROM bots WHERE id=$1 AND user_id=$2 RETURNING id`, [req.params.id, req.userId]);
-    if (del.rows.length === 0) throw Errors.notFound();
+    await deleteBotForUser(req.params.id, req.userId!);
     res.status(204).end();
   } catch (err) { next(err); }
 });
