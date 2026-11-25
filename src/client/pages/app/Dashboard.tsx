@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api';
 import { useAuth } from '../../auth-context';
 import { Icon } from '../../components/Icon';
+import { formatDailyPnlDate } from './Performance';
 import { BotStateBadge } from '../../components/BotStateBadge';
 import type {
   AnalyticsSummary, BotSummary, BrokerAccount, BrokerSymbol, DailyPnl,
@@ -53,16 +54,21 @@ function PerformanceChart({ data, days }: { data: DailyPnl[]; days: number }): J
   const minValue = Math.min(0, ...values.map((item) => item.value));
   const maxValue = Math.max(0, ...values.map((item) => item.value));
   const span = maxValue - minValue || 1;
+  const zeroY = bottom - ((0 - minValue) / span) * (bottom - top);
+  const slotWidth = values.length ? (right - left) / values.length : 0;
   const points = values.map((item, index) => ({
-    x: left + (values.length < 2 ? 0 : (index / (values.length - 1)) * (right - left)),
+    x: left + slotWidth * (index + 0.5),
     y: bottom - ((item.value - minValue) / span) * (bottom - top),
   }));
-  const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
-  const firstPoint = points.length ? points[0] : undefined;
-  const lastPoint = points.length ? points[points.length - 1] : undefined;
-  const areaPath = firstPoint && lastPoint
-    ? `${linePath} L ${lastPoint.x} ${bottom} L ${firstPoint.x} ${bottom} Z`
-    : '';
+  const bars = points.map((point, index) => ({
+    x: point.x,
+    y: Math.min(zeroY, point.y),
+    height: Math.max(2, Math.abs(zeroY - point.y)),
+    width: Math.min(36, slotWidth * 0.58),
+    positive: (values[index]?.value ?? 0) >= 0,
+  }));
+  const dateIndexes = [0, Math.floor((values.length - 1) / 2), values.length - 1]
+    .filter((index, position, all) => index >= 0 && all.indexOf(index) === position);
   const labels = [0, 1, 2, 3].map((index) => minValue + ((maxValue - minValue) * index) / 3);
 
   return (
@@ -73,12 +79,6 @@ function PerformanceChart({ data, days }: { data: DailyPnl[]; days: number }): J
         role="img"
         aria-label={`Cumulative realized profit and loss for the last ${days} days`}
       >
-        <defs>
-          <linearGradient id="performanceFill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#00d99a" stopOpacity=".34" />
-            <stop offset="100%" stopColor="#00d99a" stopOpacity="0" />
-          </linearGradient>
-        </defs>
         {labels.map((value, index) => {
           const y = top + ((bottom - top) * index) / 3;
           return (
@@ -90,22 +90,28 @@ function PerformanceChart({ data, days }: { data: DailyPnl[]; days: number }): J
         })}
         {[0, 1, 2, 3, 4].map((index) => {
           const x = left + ((right - left) * index) / 4;
-          const pointIndex = Math.min(values.length - 1, Math.round(((values.length - 1) * index) / 4));
-          const date = values[pointIndex]?.day;
           return (
-            <g key={index}>
-              <line className="chart-gridline chart-gridline-vertical" x1={x} x2={x} y1={top} y2={bottom} />
-              {date && <text className="chart-date-label" x={x} y="216" textAnchor="middle">{new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</text>}
-            </g>
+            <line key={index} className="chart-gridline chart-gridline-vertical" x1={x} x2={x} y1={top} y2={bottom} />
           );
         })}
-        {firstPoint && lastPoint && (
-          <>
-            <path d={areaPath} fill="url(#performanceFill)" />
-            <path d={linePath} className="chart-line" />
-            <circle className="chart-last-point" cx={lastPoint.x} cy={lastPoint.y} r="4.5" />
-          </>
-        )}
+        <line className="chart-zero-line" x1={left} x2={right} y1={zeroY} y2={zeroY} />
+        {bars.map((bar, index) => (
+          <rect
+            className={bar.positive ? 'chart-bar chart-bar-positive' : 'chart-bar chart-bar-negative'}
+            key={values[index]?.day ?? index}
+            x={bar.x - bar.width / 2}
+            y={bar.y}
+            width={bar.width}
+            height={bar.height}
+            rx="2"
+          />
+        ))}
+        {dateIndexes.map((index) => {
+          const value = values[index];
+          const point = points[index];
+          if (!value || !point) return null;
+          return <text key={index} className="chart-date-label" x={point.x} y="216" textAnchor={index === 0 ? 'start' : index === values.length - 1 ? 'end' : 'middle'}>{formatDailyPnlDate(value.day, { month: 'short', day: 'numeric' })}</text>;
+        })}
         {points.length === 0 && (
           <text className="chart-empty-label" x={(left + right) / 2} y="104" textAnchor="middle">
             No closed trades in this period

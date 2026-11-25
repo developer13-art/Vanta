@@ -432,6 +432,9 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .chart-empty-label { fill: #94a0ae; font-size: 12px; }
 .chart-line { fill: none; stroke: #00dda0; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; filter: drop-shadow(0 0 4px rgba(0, 221, 160, .38)); }
 .chart-last-point { fill: #0d141d; stroke: #00e3a5; stroke-width: 3; }
+.chart-zero-line { stroke: #465361; stroke-width: 1.2; }
+.chart-bar-positive { fill: #12d99a; filter: drop-shadow(0 0 3px rgba(18, 217, 154, .25)); }
+.chart-bar-negative { fill: #ff737d; filter: drop-shadow(0 0 3px rgba(255, 115, 125, .2)); }
 .chart-footnote { display: flex; justify-content: space-between; margin: -1px 4px 0 52px; color: #798695; font-size: 9px; }
 .chart-loading, .chart-empty { display: grid; min-height: 190px; place-items: center; color: var(--dash-muted); font-size: 12px; }
 .market-panel { min-height: 267px; }
@@ -1358,10 +1361,11 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .performance-chart-grid { stroke: #202b36; stroke-width: 1; }
 .performance-chart-axis, .performance-chart-date { fill: #83909e; font-size: 8px; }
 .performance-chart-date { font-size: 7px; }
-.performance-chart-line { fill: none; stroke: #12d99a; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 4px rgba(18, 217, 154, .35)); }
-.performance-chart-point { fill: #0e151f; stroke: #20e1a3; stroke-width: 2; }
+.performance-chart-zero { stroke: #465361; stroke-width: 1.2; }
+.performance-chart-bar-positive { fill: #12d99a; filter: drop-shadow(0 0 3px rgba(18, 217, 154, .25)); }
+.performance-chart-bar-negative { fill: #ff737d; filter: drop-shadow(0 0 3px rgba(255, 115, 125, .2)); }
 .performance-chart-legend { display: flex; align-items: center; gap: 6px; padding: 3px 4px; color: #a3aeba; font-size: 8px; }
-.performance-chart-legend i { width: 7px; height: 7px; border-radius: 50%; background: #13d99b; }
+.performance-chart-legend i { width: 10px; height: 7px; border-radius: 2px; background: #13d99b; }
 .performance-chart-legend small { margin-left: auto; color: #758291; font-size: 7px; }
 .performance-chart-empty { display: flex; min-height: 195px; align-items: center; justify-content: center; flex-direction: column; gap: 7px; color: #81909e; text-align: center; }
 .performance-chart-empty strong { color: #dce3e9; font-size: 10px; }

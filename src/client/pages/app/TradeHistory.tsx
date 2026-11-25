@@ -133,7 +133,7 @@ export function TradeHistory(): JSX.Element {
 
           <section className="trade-history-main-grid">
             <article className="trade-history-panel trade-history-chart-panel">
-              <div className="trade-history-panel-heading"><div><h2>Performance overview</h2><p>Cumulative realized P/L from closed trades</p></div><span>{periods.find((period) => period.value === days)?.label}</span></div>
+              <div className="trade-history-panel-heading"><div><h2>Performance overview</h2><p>Daily realized P/L from closed trades</p></div><span>{periods.find((period) => period.value === days)?.label}</span></div>
               <PerformanceChart data={daily} days={days} />
             </article>
             <aside className="trade-history-panel trade-history-breakdown">
