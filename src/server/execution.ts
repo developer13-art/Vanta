@@ -182,7 +182,7 @@ export async function closePosition(args: {
 }): Promise<void> {
   const pos = await query<{
     id: string; bot_id: string; broker_account_id: string; broker_ticket: string;
-    broker_symbol_id: string; broker_symbol: string; side: 'buy' | 'sell'; volume: number;
+    broker_symbol_id: string; broker_symbol: string; side: 'buy' | 'sell'; volume: number | string;
     closed_at: string | null; connection_provider: BrokerProvider; provider_account_id: string;
   }>(
     `SELECT p.id, p.bot_id, p.broker_account_id, p.broker_ticket, p.broker_symbol_id,
@@ -197,6 +197,10 @@ export async function closePosition(args: {
   const position = pos.rows[0];
   if (!position) throw Errors.notFound('Position not found');
   if (position.closed_at) throw Errors.conflict('Position already closed');
+  const volume = Number(position.volume);
+  if (!Number.isFinite(volume) || volume <= 0) {
+    throw Errors.internal('Position has an invalid volume; the close request was not sent.');
+  }
 
   const b = await query<{ user_id: string }>(`SELECT user_id FROM broker_accounts WHERE id=$1`, [position.broker_account_id]);
   if (b.rows[0]?.user_id !== args.userId) throw Errors.forbidden();
@@ -226,7 +230,7 @@ export async function closePosition(args: {
      RETURNING id`,
     [
       position.bot_id, position.broker_account_id, position.broker_symbol_id,
-      idempotencyKey, closeSide, position.volume,
+      idempotencyKey, closeSide, volume,
       JSON.stringify({ closePositionId: position.id }),
     ],
   );
@@ -242,7 +246,7 @@ export async function closePosition(args: {
         ticket: position.broker_ticket,
         symbol: position.broker_symbol,
         side: position.side,
-        volume: position.volume,
+        volume,
         clientId: orderId,
         idempotencyKey,
       },
