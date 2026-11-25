@@ -168,16 +168,25 @@ describe('bot analysis ticks', () => {
       return { rows: [] };
     });
 
-    const now = Math.floor(Date.now() / 60_000) * 60 - 60;
     const closes = Array.from({ length: 60 }, (_, index) => 1.2 + Math.sin(index / 4) * 0.003 + index * 0.00002);
-    state.fetchBrokerCandles.mockResolvedValue(closes.map((close, index) => ({
-      time: now - (closes.length - index - 1) * 60,
+    state.fetchBrokerCandles.mockImplementation(async (
+      _provider: string,
+      _accountId: string,
+      _symbol: string,
+      timeframe: '1m' | '5m' | '15m' | '1h',
+    ) => {
+      const interval = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600 }[timeframe];
+      const currentTime = Math.floor(Date.now() / 1000);
+      const latestClosedCandle = Math.floor(currentTime / interval) * interval - interval;
+      return closes.map((close, index) => ({
+      time: latestClosedCandle - (closes.length - index - 1) * interval,
       open: close,
       high: close + 0.001,
       low: close - 0.001,
       close,
       volume: 100,
-    })));
+      }));
+    });
     state.fetchBrokerQuotes.mockResolvedValue([{
       symbol: 'EURUSD.a',
       status: 'ok',
@@ -219,6 +228,14 @@ describe('bot analysis ticks', () => {
       providerAccountId: 'provider-account-1',
     }));
     expect(state.getAiAssessments).toHaveBeenCalledTimes(1);
+    const aiContext = state.getAiAssessments.mock.calls[0]?.[0];
+    expect(aiContext?.timeframe).toBe('1m,5m,15m,1h');
+    expect(aiContext?.markets[0]?.timeframes).toEqual(expect.objectContaining({
+      '1m': expect.objectContaining({ recentOhlc: expect.any(Array) }),
+      '5m': expect.objectContaining({ recentOhlc: expect.any(Array) }),
+      '15m': expect.objectContaining({ recentOhlc: expect.any(Array) }),
+      '1h': expect.objectContaining({ recentOhlc: expect.any(Array) }),
+    }));
     expect(state.chargeAiAssessment).toHaveBeenCalledTimes(1);
     const decisionInsert = state.query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO ai_decisions'));
     expect(decisionInsert?.[1]).toEqual(expect.arrayContaining(['BUY']));

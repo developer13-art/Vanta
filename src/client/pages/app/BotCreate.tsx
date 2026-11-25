@@ -250,7 +250,7 @@ export function BotCreate(): JSX.Element {
               <div className="bot-create-card-heading"><span className="bot-create-card-icon bot-strategy-icon"><Icon name="analytics" size={21} /></span><div><h2>AI Adaptive Analysis</h2><p>There is no fixed entry strategy to configure.</p></div></div>
               <div className="bot-strategy-explainer">
                 <Icon name="analytics" size={18} />
-                <p>The configured AI analyzes one-minute market data, live quotes, trend, momentum, and volatility across all selected instruments every minute. It can recommend BUY, SELL, HOLD, or NO_TRADE; volatility alone is never treated as an entry signal.</p>
+                <p>The configured AI analyzes closed 1-minute, 5-minute, 15-minute, and 1-hour candles, live quotes, market structure, trend, momentum, and volatility across all selected instruments every minute. BUY or SELL decisions are sent automatically without a separate human confirmation, subject to your independent risk controls.</p>
               </div>
               <div className="bot-risk-note">
                 <Icon name="shield" size={18} />
@@ -290,7 +290,7 @@ export function BotCreate(): JSX.Element {
               </div>
               <div className="bot-review-grid">
                 <div className="bot-review-group"><h3>Instruments <span>{selectedInstrumentRows.length}</span></h3>{selectedInstrumentRows.length ? <div className="bot-review-tags">{selectedInstrumentRows.map((symbol) => <span key={symbol.id}>{symbol.canonical_symbol}</span>)}</div> : <p>No instruments selected.</p>}</div>
-                <div className="bot-review-group"><h3>AI analysis</h3><dl><div><dt>Market data</dt><dd>1-minute candles</dd></div><div><dt>Analysis cadence</dt><dd>Every 1 minute</dd></div><div><dt>Assessment cost</dt><dd>2 credits per cycle</dd></div></dl></div>
+                <div className="bot-review-group"><h3>AI analysis</h3><dl><div><dt>Market data</dt><dd>1m, 5m, 15m, 1h candles</dd></div><div><dt>Analysis cadence</dt><dd>Every 1 minute</dd></div><div><dt>Assessment cost</dt><dd>2 credits per cycle</dd></div></dl></div>
                 <div className="bot-review-group"><h3>Position sizing</h3><dl><div><dt>Lot size</dt><dd>{form.lotSize}</dd></div><div><dt>Entry batch</dt><dd>{form.entryBatchSize}</dd></div><div><dt>Max positions</dt><dd>{form.maxConcurrentPositions}</dd></div></dl></div>
                 <div className="bot-review-group"><h3>Risk limits</h3><dl><div><dt>Daily loss</dt><dd>{form.dailyLossLimit}</dd></div><div><dt>Drawdown</dt><dd>{form.drawdownLimit}</dd></div><div><dt>Margin utilization</dt><dd>{form.marginUtilizationLimit}%</dd></div></dl></div>
               </div>

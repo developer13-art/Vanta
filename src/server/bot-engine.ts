@@ -13,8 +13,14 @@ import { chargeAiAssessment } from './billing';
 import { RATES } from './credit-rates';
 import { AppError } from './errors';
 
-const TIMEFRAME = '1m' as const;
-const CANDLE_SECONDS = 60;
+const TIMEFRAMES = ['1m', '5m', '15m', '1h'] as const;
+type AnalysisTimeframe = (typeof TIMEFRAMES)[number];
+const TIMEFRAME_SECONDS: Record<AnalysisTimeframe, number> = {
+  '1m': 60,
+  '5m': 300,
+  '15m': 900,
+  '1h': 3600,
+};
 const CANDLE_COUNT = 150;
 
 interface BotTick {
@@ -57,7 +63,8 @@ interface TickInstrument {
 }
 
 function currentCandleBucket(): number {
-  return Math.floor(Date.now() / (CANDLE_SECONDS * 1000)) * CANDLE_SECONDS;
+  const seconds = TIMEFRAME_SECONDS['1m'];
+  return Math.floor(Date.now() / (seconds * 1000)) * seconds;
 }
 
 function reasonText(reason: string): string {
@@ -65,7 +72,7 @@ function reasonText(reason: string): string {
     bullish_cross: 'The market showed a bullish EMA crossover on the latest closed candle.',
     bearish_cross: 'The market showed a bearish EMA crossover on the latest closed candle.',
     no_cross: 'No EMA crossover was detected on the latest closed candle.',
-    insufficient_history: 'Waiting for enough 1-minute market history to analyze this instrument.',
+    insufficient_history: 'Waiting for enough closed market history across the 1-minute, 5-minute, 15-minute, and 1-hour timeframes.',
     invalid_params: 'The bot configuration is invalid; review its settings.',
     spread_too_wide: 'The current spread is too wide for this bot.',
     ai_assessment: 'AI analysis recommends this direction; independent risk checks still apply.',
@@ -134,7 +141,7 @@ async function saveDecision(args: {
     }),
     args.riskOutcome ?? null,
     args.riskReason ?? null,
-    JSON.stringify({ timeframe: TIMEFRAME, candleTime: args.candleTime }),
+    JSON.stringify({ timeframes: TIMEFRAMES, candleTime: args.candleTime }),
   ];
   if (existing.rows[0]) {
     await query(
@@ -259,26 +266,40 @@ export async function runBotTick(botId: string): Promise<void> {
 
   const tradableInstruments = instruments.filter((instrument) => instrument.is_tradable);
   const candleResults = await Promise.all(tradableInstruments.map(async (instrument) => {
-    try {
-      const candles = await fetchBrokerCandles(
-        bot.connection_provider,
-        providerAccountId,
-        instrument.broker_symbol,
-        TIMEFRAME,
-        CANDLE_COUNT,
-      );
-      const closedCandles = candles
-        .filter((candle) => candle.time + CANDLE_SECONDS <= Math.floor(Date.now() / 1000))
-        .sort((a, b) => a.time - b.time);
-      return { instrument, candles: closedCandles, error: null as string | null };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Market data request failed.';
-      logger.warn({ err: error, botId: bot.id, symbol: instrument.broker_symbol }, 'Bot market data request failed');
-      return { instrument, candles: [], error: message.slice(0, 300) };
-    }
+    const candlesByTimeframe = {} as Record<AnalysisTimeframe, Candle[]>;
+    const errors: string[] = [];
+    await Promise.all(TIMEFRAMES.map(async (timeframe) => {
+      try {
+        const candles = await fetchBrokerCandles(
+          bot.connection_provider,
+          providerAccountId,
+          instrument.broker_symbol,
+          timeframe,
+          CANDLE_COUNT,
+        );
+        const timeframeSeconds = TIMEFRAME_SECONDS[timeframe];
+        candlesByTimeframe[timeframe] = candles
+          .filter((candle) => candle.time + timeframeSeconds <= Math.floor(Date.now() / 1000))
+          .sort((a, b) => a.time - b.time);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Market data request failed.';
+        errors.push(`${timeframe}: ${message.slice(0, 200)}`);
+        logger.warn(
+          { err: error, botId: bot.id, symbol: instrument.broker_symbol, timeframe },
+          'Bot market data request failed',
+        );
+        candlesByTimeframe[timeframe] = [];
+      }
+    }));
+    return {
+      instrument,
+      candles: candlesByTimeframe['1m'],
+      candlesByTimeframe,
+      error: errors.length > 0 ? errors.join('; ').slice(0, 300) : null,
+    };
   }));
   const candleById = new Map(candleResults.map((result) => [result.instrument.id, result]));
-  const symbolsWithCandles = candleResults.filter((result) => result.candles.length > 0);
+  const symbolsWithCandles = candleResults.filter((result) => result.candles.length >= 50);
 
   let quotes: Awaited<ReturnType<typeof fetchBrokerQuotes>> = [];
   let quoteError: string | null = null;
@@ -349,6 +370,7 @@ export async function runBotTick(botId: string): Promise<void> {
   const assessmentTargets: Array<{
     instrument: TickInstrument;
     candles: Candle[];
+    candlesByTimeframe: Record<AnalysisTimeframe, Candle[]>;
     candleTime: number;
     quote: BrokerLiveQuote;
   }> = [];
@@ -372,12 +394,15 @@ export async function runBotTick(botId: string): Promise<void> {
     }
 
     const quote = quoteBySymbol.get(instrument.broker_symbol);
-    if (candles.length < 50 || !health || health.status !== 'connected' || !health.info
+    const candlesByTimeframe = candleById.get(instrument.id)?.candlesByTimeframe;
+    const hasTimeframeHistory = candlesByTimeframe
+      && TIMEFRAMES.every((timeframe) => candlesByTimeframe[timeframe].length >= 50);
+    if (!hasTimeframeHistory || !health || health.status !== 'connected' || !health.info
       || quoteError || !quote || quote.status !== 'ok' || quote.bid === null || quote.ask === null
       || quote.stale || quote.marketOpen === false || quote.tradeMode === 'disabled' || quote.tradeMode === 'closeOnly') {
       continue;
     }
-    assessmentTargets.push({ instrument, candles, candleTime, quote });
+    assessmentTargets.push({ instrument, candles, candlesByTimeframe, candleTime, quote });
   }
 
   const assessmentSignals = new Map<string, StrategySignal>();
@@ -396,7 +421,7 @@ export async function runBotTick(botId: string): Promise<void> {
         let aiDecisions: Awaited<ReturnType<typeof getAiAssessments>> | null = null;
         try {
           aiDecisions = await getAiAssessments({
-            timeframe: TIMEFRAME,
+            timeframe: TIMEFRAMES.join(','),
             bot: {
               name: bot.name,
               lotSize: Number(bot.lot_size),
@@ -415,7 +440,7 @@ export async function runBotTick(botId: string): Promise<void> {
               usedMargin: health?.info?.usedMargin,
               marginLevel: health?.info?.marginLevel,
             },
-            markets: assessmentTargets.map(({ instrument, candles, quote }) => ({
+            markets: assessmentTargets.map(({ instrument, candlesByTimeframe, quote }) => ({
               symbol: instrument.broker_symbol,
               canonicalSymbol: instrument.canonical_symbol,
               category: instrument.category,
@@ -426,7 +451,13 @@ export async function runBotTick(botId: string): Promise<void> {
                 marketOpen: quote.marketOpen,
                 tradeMode: quote.tradeMode,
               },
-              indicators: analyzeMarket(candles),
+              timeframes: Object.fromEntries(TIMEFRAMES.map((timeframe) => {
+                const candles = candlesByTimeframe[timeframe];
+                return [timeframe, {
+                  indicators: analyzeMarket(candles),
+                  recentOhlc: candles.slice(-12).map(({ open, high, low, close }) => [open, high, low, close]),
+                }];
+              })),
             })),
           });
         } catch (error) {
@@ -445,7 +476,10 @@ export async function runBotTick(botId: string): Promise<void> {
               reason: 'ai_assessment',
               meta: {
                 reasoning: decision.reasoning,
-                indicators: analyzeMarket(target.candles),
+                timeframes: Object.fromEntries(TIMEFRAMES.map((timeframe) => [
+                  timeframe,
+                  analyzeMarket(target.candlesByTimeframe[timeframe]),
+                ])),
               },
             };
             const decisionId = await saveDecision({
@@ -512,13 +546,15 @@ export async function runBotTick(botId: string): Promise<void> {
     const candleResult = candleById.get(instrument.id);
     const candles = candleResult?.candles ?? [];
     const candleTime = candles[candles.length - 1]?.time ?? candleTimeFallback;
-    if (candles.length < 50) {
+    const missingTimeframes = TIMEFRAMES.filter((timeframe) =>
+      (candleResult?.candlesByTimeframe[timeframe]?.length ?? 0) < 50);
+    if (candles.length < 50 || missingTimeframes.length > 0) {
       await saveNoTrade(
         bot,
         instrument,
-        candleTime,
+        candles[candles.length - 1]?.time ?? candleTime,
         candleResult?.error ? 'market_data_unavailable' : 'insufficient_history',
-        { detail: candleResult?.error ?? null },
+        { detail: candleResult?.error ?? (missingTimeframes.length ? `Missing history: ${missingTimeframes.join(', ')}.` : null) },
       );
       continue;
     }

@@ -44,7 +44,9 @@ export async function getAiAssessments(context: {
         {
           role: 'system',
           content: [
-            'You are a cautious market analyst. Analyze only the supplied market indicators and quotes.',
+            'You are an adaptive market-structure analyst. Analyze the supplied closed OHLC candles and indicators across all provided timeframes (1m, 5m, 15m, 1h), together with the live broker quote.',
+            'Use price structure, swing highs/lows, momentum, trend alignment, and volatility to choose a direction; do not follow a named or fixed strategy.',
+            'When there is a clear actionable BUY or SELL setup, return that direction directly; there is no separate human confirmation step. Return HOLD or NO_TRADE only when the evidence is mixed, the setup is not actionable, or the supplied data is insufficient.',
             'Return one decision for every supplied symbol in JSON: {"decisions":[{"symbol":"...","verdict":"BUY|SELL|HOLD|NO_TRADE","confidence":0.0,"reasoning":"..."}]}.',
             'Never return position size, leverage, stop changes, or instructions outside this schema.',
             'Use NO_TRADE when evidence is mixed, data is insufficient, or volatility makes direction uncertain.',
