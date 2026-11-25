@@ -8,6 +8,7 @@ import { getBrokerHealth } from './broker-providers';
 import { query } from './db';
 import { checkLowBalance, createNotification } from './notifications';
 import { runBotTick } from './bot-engine';
+import { manageProfitablePositions } from './position-manager';
 
 // Register job handlers
 registerHandler('reconciliation', async (payload) => {
@@ -113,6 +114,13 @@ registerHandler('notification_dispatch', async (payload) => {
 registerHandler('tick_analysis', async (payload) => {
   if (typeof payload.botId !== 'string') throw new Error('Tick job is missing its bot ID.');
   await runBotTick(payload.botId);
+});
+
+registerHandler('position_management', async (payload) => {
+  if (typeof payload.brokerAccountId !== 'string') {
+    throw new Error('Position management job is missing its broker account ID.');
+  }
+  await manageProfitablePositions(payload.brokerAccountId);
 });
 
 async function bootstrap(): Promise<void> {

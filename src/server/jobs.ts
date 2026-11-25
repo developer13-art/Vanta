@@ -4,6 +4,7 @@ import { env } from './env';
 
 export type JobType =
   | 'tick_analysis'
+  | 'position_management'
   | 'position_check'
   | 'reconciliation'
   | 'reservation_expiry'
@@ -119,6 +120,7 @@ export async function drainOnce(): Promise<void> {
 
 let timer: NodeJS.Timeout | null = null;
 let botTickTimer: NodeJS.Timeout | null = null;
+let positionManagementTimer: NodeJS.Timeout | null = null;
 
 export function startScheduler(): void {
   if (timer) return;
@@ -130,7 +132,12 @@ export function startScheduler(): void {
     enqueueDueBotTicks().catch((err) => logger.error({ err }, 'Bot tick scheduling failed'));
   }, 15_000);
   botTickTimer.unref();
+  positionManagementTimer = setInterval(() => {
+    enqueueDuePositionManagement().catch((err) => logger.error({ err }, 'Position management scheduling failed'));
+  }, 10_000);
+  positionManagementTimer.unref();
   enqueueDueBotTicks().catch((err) => logger.error({ err }, 'Initial bot tick scheduling failed'));
+  enqueueDuePositionManagement().catch((err) => logger.error({ err }, 'Initial position management scheduling failed'));
   logger.info({ intervalMs: env.JOB_POLL_INTERVAL_MS }, 'Job scheduler started');
 }
 
@@ -142,6 +149,10 @@ export function stopScheduler(): void {
   if (botTickTimer) {
     clearInterval(botTickTimer);
     botTickTimer = null;
+  }
+  if (positionManagementTimer) {
+    clearInterval(positionManagementTimer);
+    positionManagementTimer = null;
   }
 }
 
@@ -161,13 +172,26 @@ export async function enqueueDueBotTicks(): Promise<void> {
      SELECT 'tick_analysis', jsonb_build_object('botId', b.id), now()
        FROM bots b
       WHERE b.state = 'running'
-        AND (b.last_run_at IS NULL OR b.last_run_at <= now() - interval '2 minutes')
+        AND (b.last_run_at IS NULL OR b.last_run_at <= now() - interval '1 minute')
         AND NOT EXISTS (
           SELECT 1 FROM jobs j
            WHERE j.type = 'tick_analysis'
              AND j.payload->>'botId' = b.id::text
              AND j.status IN ('pending', 'running')
         )
+     ON CONFLICT DO NOTHING`,
+  );
+}
+
+export async function enqueueDuePositionManagement(): Promise<void> {
+  await query(
+    `INSERT INTO jobs (type, payload, run_at)
+     SELECT 'position_management', jsonb_build_object('brokerAccountId', p.broker_account_id), now()
+       FROM positions p
+      WHERE p.closed_at IS NULL
+        AND p.management_state = 'platform_managed'
+        AND p.source = 'platform'
+      GROUP BY p.broker_account_id
      ON CONFLICT DO NOTHING`,
   );
 }

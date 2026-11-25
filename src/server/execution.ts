@@ -178,6 +178,7 @@ export async function submitOrder(args: SubmitOrderArgs): Promise<SubmitOrderRes
 export async function closePosition(args: {
   userId: string;
   positionId: string;
+  closedBy?: 'user' | 'platform';
 }): Promise<void> {
   const pos = await query<{
     id: string; bot_id: string; broker_account_id: string; broker_ticket: string;
@@ -201,7 +202,20 @@ export async function closePosition(args: {
   if (b.rows[0]?.user_id !== args.userId) throw Errors.forbidden();
 
   const closeSide = position.side === 'buy' ? 'sell' : 'buy';
-  const idempotencyKey = `close-position:${position.id}`;
+  const previousClose = await query<{ id: string; status: string }>(
+    `SELECT id, status
+       FROM orders
+      WHERE broker_account_id = $1
+        AND request_payload->>'closePositionId' = $2
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+    [position.broker_account_id, position.id],
+  );
+  const previousAttempt = previousClose.rows[0];
+  if (previousAttempt && !['rejected', 'failed', 'cancelled'].includes(previousAttempt.status)) return;
+  const idempotencyKey = previousAttempt
+    ? `close-position:${position.id}:retry:${previousAttempt.id}`
+    : `close-position:${position.id}`;
 
   const insertRes = await query<{ id: string }>(
     `INSERT INTO orders
@@ -269,9 +283,9 @@ export async function closePosition(args: {
       await client.query(
         `UPDATE positions
             SET closed_at = now(), close_price = $2, management_state = 'closing',
-                closed_by = 'user'
+                closed_by = $3
           WHERE id = $1`,
-        [position.id, result.price],
+        [position.id, result.price, args.closedBy ?? 'user'],
       );
       await client.query(
         `UPDATE orders

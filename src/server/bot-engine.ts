@@ -640,7 +640,7 @@ export async function runBotTick(botId: string): Promise<void> {
     let closeFailure: string | null = null;
     for (const position of openSymbolPositions.rows) {
       try {
-        await closePosition({ userId: bot.user_id, positionId: position.id });
+        await closePosition({ userId: bot.user_id, positionId: position.id, closedBy: 'platform' });
       } catch (error) {
         closeFailure = error instanceof Error ? error.message : 'Broker rejected the close request.';
         logger.warn({ err: error, botId: bot.id, positionId: position.id }, 'Bot could not close an opposite position');

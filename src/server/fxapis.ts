@@ -296,6 +296,8 @@ export async function getOpenPositions(accountId: string): Promise<Array<{
   openPrice: number;
   currentPrice: number | null;
   profit: number | null;
+  commission: number | null;
+  swap: number | null;
 }>> {
   const data = await requestData(`/v1/accounts/${encodeURIComponent(accountId)}/positions`);
   if (!Array.isArray(data)) throw new FxApisError('FXAPIs returned an invalid positions list.', 502, 'INVALID_RESPONSE');
@@ -315,6 +317,8 @@ export async function getOpenPositions(accountId: string): Promise<Array<{
       openPrice,
       currentPrice: numericValue(row.currentPrice),
       profit: numericValue(row.profit),
+      commission: numericValue(row.commission),
+      swap: numericValue(row.swap),
     };
   });
 }

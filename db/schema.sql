@@ -435,7 +435,7 @@ CREATE INDEX IF NOT EXISTS payments_status_idx ON payments (status);
 CREATE TABLE IF NOT EXISTS jobs (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   type          TEXT NOT NULL CHECK (type IN (
-                  'tick_analysis','position_check','reconciliation',
+                  'tick_analysis','position_management','position_check','reconciliation',
                   'reservation_expiry','notification_dispatch','broker_health_check')),
   payload       JSONB NOT NULL,
   status        TEXT NOT NULL DEFAULT 'pending'
@@ -449,6 +449,12 @@ CREATE TABLE IF NOT EXISTS jobs (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_type_check;
+ALTER TABLE jobs ADD CONSTRAINT jobs_type_check CHECK (type IN (
+  'tick_analysis','position_management','position_check','reconciliation',
+  'reservation_expiry','notification_dispatch','broker_health_check'
+));
+
 CREATE INDEX IF NOT EXISTS jobs_pending_idx ON jobs (run_at)
   WHERE status = 'pending';
 
@@ -457,6 +463,9 @@ CREATE INDEX IF NOT EXISTS jobs_running_idx ON jobs (claimed_at)
 CREATE UNIQUE INDEX IF NOT EXISTS jobs_one_active_bot_tick_idx
   ON jobs ((payload->>'botId'))
   WHERE type = 'tick_analysis' AND status IN ('pending', 'running');
+CREATE UNIQUE INDEX IF NOT EXISTS jobs_one_active_position_management_idx
+  ON jobs ((payload->>'brokerAccountId'))
+  WHERE type = 'position_management' AND status IN ('pending', 'running');
 
 -- ============================================================================
 -- 10. NOTIFICATIONS

@@ -47,6 +47,8 @@ export interface BrokerPositionSnapshot {
   openPrice: number;
   currentPrice: number | null;
   profit: number | null;
+  commission: number | null;
+  swap: number | null;
 }
 
 export interface BrokerLiveQuote {
@@ -219,6 +221,8 @@ export async function fetchBrokerPositions(
     openPrice: position.openPrice,
     currentPrice: typeof position.currentPrice === 'number' ? position.currentPrice : null,
     profit: typeof position.profit === 'number' ? position.profit : null,
+    commission: typeof position.commission === 'number' ? position.commission : null,
+    swap: typeof position.swap === 'number' ? position.swap : null,
   }));
 }
 
