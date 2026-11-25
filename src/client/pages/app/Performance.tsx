@@ -9,6 +9,7 @@ const periods = [
   { value: 30, label: '30 days' },
   { value: 90, label: '90 days' },
   { value: 365, label: '1 year' },
+  { value: 'all' as const, label: 'All time' },
 ];
 
 function formatNumber(value: number, digits = 2): string {
@@ -33,7 +34,7 @@ export function formatDailyPnlDate(day: string, options: Intl.DateTimeFormatOpti
   return date.toLocaleDateString(undefined, options);
 }
 
-export function PerformanceChart({ data, days }: { data: DailyPnl[]; days: number }): JSX.Element {
+export function PerformanceChart({ data, days }: { data: DailyPnl[]; days: number | 'all' }): JSX.Element {
   const points = useMemo(() => {
     return data.map((item) => ({ day: item.day, pnl: Number(item.pnl) }));
   }, [data]);
@@ -66,7 +67,7 @@ export function PerformanceChart({ data, days }: { data: DailyPnl[]; days: numbe
   return (
     <div className="performance-chart-wrap">
       {points.length ? (
-        <svg className="performance-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Daily realized profit and loss for the last ${days} days`}>
+        <svg className="performance-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={days === 'all' ? 'Monthly realized profit and loss for all recorded history' : `Daily realized profit and loss for the last ${days} days`}>
           {axisValues.map((value, index) => {
             const y = top + ((bottom - top) * index) / 2;
             return <g key={index}><line className="performance-chart-grid" x1={left} x2={right} y1={y} y2={y} /><text className="performance-chart-axis" x="0" y={y + 4}>{formatNumber(value, 0)}</text></g>;
@@ -91,7 +92,7 @@ export function PerformanceChart({ data, days }: { data: DailyPnl[]; days: numbe
             if (!point || !bar) return null;
             return (
               <text className="performance-chart-date" key={index} x={bar.x} y="207" textAnchor={index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle'}>
-                {formatDailyPnlDate(point.day, { month: 'short', day: 'numeric' })}
+                {formatDailyPnlDate(point.day, days === 'all' ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' })}
               </text>
             );
           })}
@@ -99,13 +100,13 @@ export function PerformanceChart({ data, days }: { data: DailyPnl[]; days: numbe
       ) : (
         <div className="performance-chart-empty"><Icon name="analytics" size={24} /><strong>No closed trades in this period</strong><span>Realized results will appear here after positions close.</span></div>
       )}
-      {points.length > 0 && <div className="performance-chart-legend"><i /><span>Daily realized P/L</span><small>{data.length} recorded day{data.length === 1 ? '' : 's'} · {days} day range</small></div>}
+      {points.length > 0 && <div className="performance-chart-legend"><i /><span>{days === 'all' ? 'Monthly' : 'Daily'} realized P/L</span><small>{days === 'all' ? `${data.length} recorded months · all time` : `${data.length} recorded day${data.length === 1 ? '' : 's'} · ${days} day range`}</small></div>}
     </div>
   );
 }
 
 export function Performance(): JSX.Element {
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState<number | 'all'>('all');
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [daily, setDaily] = useState<DailyPnl[]>([]);
   const [loading, setLoading] = useState(true);
@@ -146,8 +147,8 @@ export function Performance(): JSX.Element {
         </div>
         <label className="performance-period">
           <Icon name="history" size={15} />
-          <select aria-label="Performance date range" value={days} onChange={(event) => setDays(Number(event.target.value))}>
-            {periods.map((period) => <option key={period.value} value={period.value}>{period.label}</option>)}
+        <select aria-label="Performance date range" value={days} onChange={(event) => setDays(event.target.value === 'all' ? 'all' : Number(event.target.value))}>
+          {periods.map((period) => <option key={period.value} value={period.value}>{period.label}</option>)}
           </select>
         </label>
       </header>
@@ -166,7 +167,7 @@ export function Performance(): JSX.Element {
 
           <section className="performance-main-grid">
             <article className="performance-panel performance-chart-panel">
-              <div className="performance-panel-heading"><div><h2>Performance overview</h2><p>Daily realized P/L grouped by close date</p></div><span className="performance-period-tag">{periods.find((period) => period.value === days)?.label}</span></div>
+              <div className="performance-panel-heading"><div><h2>Performance overview</h2><p>{days === 'all' ? 'Monthly realized P/L grouped by close date' : 'Daily realized P/L grouped by close date'}</p></div><span className="performance-period-tag">{periods.find((period) => period.value === days)?.label}</span></div>
               <PerformanceChart data={daily} days={days} />
             </article>
             <aside className="performance-panel performance-breakdown">
@@ -184,25 +185,25 @@ export function Performance(): JSX.Element {
           </section>
 
           <section className="performance-panel performance-daily-panel">
-            <div className="performance-panel-heading"><div><h2>Daily results</h2><p>Realized P/L grouped by close date</p></div><span className="performance-result-count">{daily.length} day{daily.length === 1 ? '' : 's'} with trades</span></div>
+            <div className="performance-panel-heading"><div><h2>{days === 'all' ? 'Monthly results' : 'Daily results'}</h2><p>Realized P/L grouped by close date</p></div><span className="performance-result-count">{daily.length} {days === 'all' ? 'month' : 'day'}{daily.length === 1 ? '' : 's'} with trades</span></div>
             {daily.length === 0 ? (
               <div className="performance-daily-empty">No closed trades in this period.</div>
             ) : (
               <div className="performance-table-scroll">
                 <table className="performance-table">
-                  <thead><tr><th>Close date</th><th>Closed trades</th><th>Daily realized P/L</th><th>Running total</th></tr></thead>
+                  <thead><tr><th>Close date</th><th>Closed trades</th><th>{days === 'all' ? 'Monthly' : 'Daily'} realized P/L</th><th>Running total</th></tr></thead>
                   <tbody>
                     {daily.map((item, index) => {
                       const cumulative = daily.slice(0, index + 1).reduce((sum, day) => sum + Number(day.pnl), 0);
                       const pnl = Number(item.pnl);
-                      return <tr key={item.day}><td>{formatDailyPnlDate(item.day)}</td><td>{item.trades}</td><td className={pnl >= 0 ? 'performance-positive' : 'performance-negative'}>{formatSigned(pnl)}</td><td>{formatSigned(cumulative)}</td></tr>;
+                      return <tr key={item.day}><td>{formatDailyPnlDate(item.day, days === 'all' ? { month: 'long', year: 'numeric' } : undefined)}</td><td>{item.trades}</td><td className={pnl >= 0 ? 'performance-positive' : 'performance-negative'}>{formatSigned(pnl)}</td><td>{formatSigned(cumulative)}</td></tr>;
                     })}
                   </tbody>
                 </table>
               </div>
             )}
           </section>
-          <p className="performance-data-note">Values are aggregated from recorded closed positions. Currency conversion is not applied.</p>
+          <p className="performance-data-note">Values are aggregated from all recorded closed positions in the selected range. Currency conversion is not applied.</p>
         </>
       )}
     </div>

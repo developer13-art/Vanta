@@ -225,7 +225,7 @@ export interface Candle {
 }
 
 export interface AnalyticsSummary {
-  days: number;
+  days: number | 'all';
   pnl: {
     realized: string;
     wins: string;

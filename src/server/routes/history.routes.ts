@@ -27,8 +27,7 @@ historyRouter.get('/', requireAuth, async (req, res, next) => {
          JOIN broker_symbols s ON s.id = p.broker_symbol_id
          JOIN broker_accounts ba ON ba.id = p.broker_account_id
         WHERE ${conditions.join(' AND ')}
-        ORDER BY p.closed_at DESC
-        LIMIT 1000`,
+         ORDER BY p.closed_at DESC`,
       params,
     );
 
@@ -120,7 +119,7 @@ historyRouter.get('/export/csv', requireAuth, async (req, res, next) => {
          JOIN broker_symbols s ON s.id = p.broker_symbol_id
          JOIN broker_accounts ba ON ba.id = p.broker_account_id
         WHERE b.user_id = $1 AND p.closed_at IS NOT NULL
-        ORDER BY p.closed_at DESC LIMIT 10000`,
+        ORDER BY p.closed_at DESC`,
       [req.userId],
     );
 

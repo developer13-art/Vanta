@@ -16,6 +16,7 @@ const periods = [
   { label: '1M', days: 30 },
   { label: '3M', days: 90 },
   { label: '1Y', days: 365 },
+  { label: 'ALL', days: 'all' as const },
 ];
 
 function formatNumber(value: number, digits = 2): string {
@@ -36,7 +37,7 @@ function formatName(fullName: string | null, email: string | null): string {
     : 'Trader';
 }
 
-function PerformanceChart({ data, days }: { data: DailyPnl[]; days: number }): JSX.Element {
+function PerformanceChart({ data, days }: { data: DailyPnl[]; days: number | 'all' }): JSX.Element {
   const values = useMemo(() => {
     let total = 0;
     return data.map((item) => {
@@ -77,7 +78,7 @@ function PerformanceChart({ data, days }: { data: DailyPnl[]; days: number }): J
         className="dashboard-chart-svg"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`Cumulative realized profit and loss for the last ${days} days`}
+        aria-label={days === 'all' ? 'Cumulative realized profit and loss for all recorded history' : `Cumulative realized profit and loss for the last ${days} days`}
       >
         {labels.map((value, index) => {
           const y = top + ((bottom - top) * index) / 3;
@@ -110,7 +111,7 @@ function PerformanceChart({ data, days }: { data: DailyPnl[]; days: number }): J
           const value = values[index];
           const point = points[index];
           if (!value || !point) return null;
-          return <text key={index} className="chart-date-label" x={point.x} y="216" textAnchor={index === 0 ? 'start' : index === values.length - 1 ? 'end' : 'middle'}>{formatDailyPnlDate(value.day, { month: 'short', day: 'numeric' })}</text>;
+          return <text key={index} className="chart-date-label" x={point.x} y="216" textAnchor={index === 0 ? 'start' : index === values.length - 1 ? 'end' : 'middle'}>{formatDailyPnlDate(value.day, days === 'all' ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' })}</text>;
         })}
         {points.length === 0 && (
           <text className="chart-empty-label" x={(left + right) / 2} y="104" textAnchor="middle">
@@ -119,7 +120,7 @@ function PerformanceChart({ data, days }: { data: DailyPnl[]; days: number }): J
         )}
       </svg>
       <div className="chart-footnote">
-        <span>{days} day{days === 1 ? '' : 's'}</span>
+        <span>{days === 'all' ? 'All time' : `${days} day${days === 1 ? '' : 's'}`}</span>
         <span>Cumulative realized P/L</span>
       </div>
     </div>
@@ -166,9 +167,10 @@ function Dashboard(): JSX.Element {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [symbols, setSymbols] = useState<BrokerSymbol[]>([]);
   const [dailyPnl, setDailyPnl] = useState<DailyPnl[]>([]);
+  const [todayDailyPnl, setTodayDailyPnl] = useState<DailyPnl[]>([]);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [marketFilter, setMarketFilter] = useState<MarketFilter>('forex');
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState<number | 'all'>('all');
   const [loading, setLoading] = useState(true);
   const [performanceLoading, setPerformanceLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -231,11 +233,18 @@ function Dashboard(): JSX.Element {
     let active = true;
     setPerformanceLoading(true);
     setPerformanceError(false);
-    Promise.allSettled([api.getAnalyticsSummary(days), api.getDailyPnl(days)]).then(([summaryResult, dailyResult]) => {
+    Promise.allSettled([
+      api.getAnalyticsSummary(days),
+      api.getDailyPnl(days),
+      api.getDailyPnl(1),
+    ]).then(([summaryResult, dailyResult, todayResult]) => {
       if (!active) return;
       if (summaryResult.status === 'fulfilled') setSummary(summaryResult.value);
       if (dailyResult.status === 'fulfilled') setDailyPnl(dailyResult.value);
-      setPerformanceError(summaryResult.status === 'rejected' || dailyResult.status === 'rejected');
+      if (todayResult.status === 'fulfilled') setTodayDailyPnl(todayResult.value);
+      setPerformanceError(
+        summaryResult.status === 'rejected' || dailyResult.status === 'rejected' || todayResult.status === 'rejected',
+      );
       setPerformanceLoading(false);
     });
     return () => { active = false; };
@@ -258,7 +267,7 @@ function Dashboard(): JSX.Element {
   const usedMargin = sumBrokerField(connectedBrokers, 'account_used_margin', multipleAccountCurrencies);
   const equityCaption = multipleAccountCurrencies ? 'Mixed currencies · not combined'
     : accountCurrencies[0] ?? (connectedBrokers.length ? 'Currency unavailable' : 'Connect an account');
-  const today = dailyPnl.find((item) => new Date(item.day).toDateString() === new Date().toDateString());
+  const today = todayDailyPnl.find((item) => new Date(item.day).toDateString() === new Date().toDateString());
   const todayPnl = Number(today?.pnl ?? 0);
   const realizedPnl = Number(summary?.pnl.realized ?? 0);
   const wins = Number(summary?.pnl.wins ?? 0);

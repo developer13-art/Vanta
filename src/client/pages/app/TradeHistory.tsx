@@ -6,6 +6,7 @@ import { PerformanceChart } from './Performance';
 import type { AnalyticsSummary, DailyPnl, TradeHistoryEntry } from '../../../shared/types';
 
 const periods = [
+  { value: 'all' as const, label: 'All time' },
   { value: 1, label: 'Today' },
   { value: 7, label: '7 days' },
   { value: 30, label: 'Last 30 days' },
@@ -30,7 +31,7 @@ function formatTimestamp(value: string | null): string {
 }
 
 export function TradeHistory(): JSX.Element {
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState<number | 'all'>('all');
   const [rows, setRows] = useState<TradeHistoryEntry[]>([]);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [daily, setDaily] = useState<DailyPnl[]>([]);
@@ -48,7 +49,7 @@ export function TradeHistory(): JSX.Element {
     setLoading(true);
     setError(null);
     setErrorAction('load');
-    const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const from = days === 'all' ? undefined : new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     Promise.all([
       api.listHistory({ from }),
       api.getAnalyticsSummary(days),
@@ -114,7 +115,7 @@ export function TradeHistory(): JSX.Element {
           <div><span className="trade-history-eyebrow">CLOSED POSITIONS & ANALYTICS</span><h1>Trade History & Performance</h1><p>Review closed trades and realized results over time.</p></div>
         </div>
         <div className="trade-history-heading-actions">
-          <label className="trade-history-period"><Icon name="history" size={15} /><select aria-label="Trade history date range" value={days} onChange={(event) => setDays(Number(event.target.value))}>{periods.map((period) => <option key={period.value} value={period.value}>{period.label}</option>)}</select></label>
+          <label className="trade-history-period"><Icon name="history" size={15} /><select aria-label="Trade history date range" value={days} onChange={(event) => setDays(event.target.value === 'all' ? 'all' : Number(event.target.value))}>{periods.map((period) => <option key={period.value} value={period.value}>{period.label}</option>)}</select></label>
           <button type="button" className="trade-history-export" onClick={exportCsv} disabled={exporting}><Icon name="analytics" size={15} />{exporting ? 'Preparing…' : 'Export CSV'}</button>
         </div>
       </header>
@@ -133,7 +134,7 @@ export function TradeHistory(): JSX.Element {
 
           <section className="trade-history-main-grid">
             <article className="trade-history-panel trade-history-chart-panel">
-              <div className="trade-history-panel-heading"><div><h2>Performance overview</h2><p>Daily realized P/L from closed trades</p></div><span>{periods.find((period) => period.value === days)?.label}</span></div>
+              <div className="trade-history-panel-heading"><div><h2>Performance overview</h2><p>{days === 'all' ? 'Monthly realized P/L from all recorded trades' : 'Daily realized P/L from closed trades'}</p></div><span>{periods.find((period) => period.value === days)?.label}</span></div>
               <PerformanceChart data={daily} days={days} />
             </article>
             <aside className="trade-history-panel trade-history-breakdown">
@@ -149,7 +150,7 @@ export function TradeHistory(): JSX.Element {
           </section>
 
           <section className="trade-history-panel trade-history-table-panel">
-            <div className="trade-history-panel-heading"><div><h2>Closed trades</h2><p>Latest up to 1,000 records in the selected range</p></div><span>{visibleRows.length} shown</span></div>
+            <div className="trade-history-panel-heading"><div><h2>Closed trades</h2><p>All recorded trades in the selected range</p></div><span>{visibleRows.length} shown</span></div>
             <div className="trade-history-toolbar">
               <div className="trade-history-filter-tabs" role="group" aria-label="Filter trade results">
                 {([

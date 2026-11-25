@@ -274,9 +274,9 @@ export const api = {
     request<{ ok: boolean }>('/api/settings/profile', { method: 'PATCH', body }),
 
   // ---- Analytics ----
-  getAnalyticsSummary: (days = 30) =>
+  getAnalyticsSummary: (days: number | 'all' = 30) =>
     request<AnalyticsSummary>(`/api/analytics/summary?days=${days}`),
-  getDailyPnl: (days = 30) =>
+  getDailyPnl: (days: number | 'all' = 30) =>
     request<DailyPnl[]>(`/api/analytics/daily-pnl?days=${days}`),
 
   // ---- Trade history ----

@@ -4,10 +4,18 @@ import { requireAuth } from '../middleware';
 
 export const analyticsRouter = Router();
 
+export function parseAnalyticsPeriod(value: unknown): number | 'all' {
+  const requested = String(value ?? '');
+  if (requested.toLowerCase() === 'all') return 'all';
+  return Math.min(365, Math.max(1, Number(requested) || 30));
+}
+
 analyticsRouter.get('/summary', requireAuth, async (req, res, next) => {
   try {
-    const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
-    const since = `now() - ($1::int || ' days')::interval`;
+    const days = parseAnalyticsPeriod(req.query.days);
+    const userParam = days === 'all' ? 1 : 2;
+    const params = days === 'all' ? [req.userId] : [days, req.userId];
+    const dateFilter = days === 'all' ? '' : `AND p.closed_at >= now() - ($1::int || ' days')::interval`;
 
     const pnl = await query<{
       realized: string; wins: string; losses: string; total: string;
@@ -24,34 +32,39 @@ analyticsRouter.get('/summary', requireAuth, async (req, res, next) => {
          COALESCE(MIN(realized_pl), 0) AS largest_loss
        FROM positions p
        JOIN bots b ON b.id = p.bot_id
-      WHERE b.user_id = $2 AND p.closed_at IS NOT NULL
-        AND p.closed_at >= ${since}`,
-      [days, req.userId],
+      WHERE b.user_id = $${userParam} AND p.closed_at IS NOT NULL
+        ${dateFilter}`,
+      params,
     );
 
+    const creditDateFilter = days === 'all' ? '' : `AND created_at >= now() - ($1::int || ' days')::interval`;
     const credits = await query<{ spent: string }>(
       `SELECT COALESCE(SUM(-delta), 0) AS spent
          FROM credit_ledger
-        WHERE user_id = $2 AND delta < 0 AND created_at >= ${since}`,
-      [days, req.userId],
+        WHERE user_id = $${userParam} AND delta < 0 ${creditDateFilter}`,
+      params,
     );
 
-    res.json({ days, pnl: pnl.rows[0], creditsUsed: Number(credits.rows[0].spent) });
+    res.json({ days, pnl: pnl.rows[0], creditsUsed: Number(credits.rows[0]?.spent ?? 0) });
   } catch (err) { next(err); }
 });
 
 analyticsRouter.get('/daily-pnl', requireAuth, async (req, res, next) => {
   try {
-    const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
+    const days = parseAnalyticsPeriod(req.query.days);
+    const userParam = days === 'all' ? 1 : 2;
+    const params = days === 'all' ? [req.userId] : [days, req.userId];
+    const dateFilter = days === 'all' ? '' : `AND p.closed_at >= now() - ($1::int || ' days')::interval`;
+    const dateGrouping = days === 'all' ? "date_trunc('month', p.closed_at)" : "date_trunc('day', p.closed_at)";
     const rows = await query(
-      `SELECT date_trunc('day', p.closed_at) AS day,
+      `SELECT ${dateGrouping} AS day,
               COALESCE(SUM(p.realized_pl), 0) AS pnl,
               count(*)::int AS trades
          FROM positions p JOIN bots b ON b.id = p.bot_id
-        WHERE b.user_id = $2 AND p.closed_at IS NOT NULL
-          AND p.closed_at >= now() - ($1::int || ' days')::interval
+        WHERE b.user_id = $${userParam} AND p.closed_at IS NOT NULL
+          ${dateFilter}
         GROUP BY 1 ORDER BY 1`,
-      [days, req.userId],
+      params,
     );
     res.json(rows.rows);
   } catch (err) { next(err); }
