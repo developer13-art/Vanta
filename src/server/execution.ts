@@ -286,7 +286,10 @@ export async function closePosition(args: {
     await withTransaction(async (client) => {
       await client.query(
         `UPDATE positions
-            SET closed_at = now(), close_price = $2, management_state = 'closing',
+            SET closed_at = now(),
+                close_price = COALESCE($2, current_price),
+                realized_pl = COALESCE(realized_pl, floating_pl),
+                management_state = 'closing',
                 closed_by = $3
           WHERE id = $1`,
         [position.id, result.price, args.closedBy ?? 'user'],

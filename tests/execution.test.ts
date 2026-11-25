@@ -64,6 +64,10 @@ describe('close position execution', () => {
       'provider-account-1',
       expect.objectContaining({ ticket: 'ticket-1', volume: 0.01 }),
     );
+    const positionCloseUpdate = state.transactionQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('SET closed_at = now()'));
+    expect(positionCloseUpdate?.[0]).toContain('realized_pl = COALESCE(realized_pl, floating_pl)');
+    expect(positionCloseUpdate?.[1]).toEqual(['position-1', 1.1, 'platform']);
     expect(state.query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO orders'))?.[1])
       .toEqual(expect.arrayContaining(['close-position:position-1', 'sell', 0.01]));
   });

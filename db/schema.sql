@@ -315,6 +315,13 @@ CREATE INDEX IF NOT EXISTS positions_bot_idx ON positions (bot_id) WHERE closed_
 CREATE INDEX IF NOT EXISTS positions_account_idx ON positions (broker_account_id) WHERE closed_at IS NULL;
 CREATE INDEX IF NOT EXISTS positions_open_idx ON positions (closed_at) WHERE closed_at IS NULL;
 
+UPDATE positions
+   SET close_price = COALESCE(close_price, current_price),
+       realized_pl = COALESCE(realized_pl, floating_pl)
+ WHERE closed_at IS NOT NULL
+   AND (close_price IS NULL OR realized_pl IS NULL)
+   AND (current_price IS NOT NULL OR floating_pl IS NOT NULL);
+
 -- ============================================================================
 -- 6. AI DECISION RECORDS
 -- ============================================================================
