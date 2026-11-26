@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, ApiRequestError } from '../../api';
 import { Icon } from '../../components/Icon';
 import { PerformanceChart } from './Performance';
+import { paginateRows } from './trade-history-pagination';
 import type { AnalyticsSummary, DailyPnl, TradeHistoryEntry } from '../../../shared/types';
 
 const periods = [
@@ -38,6 +39,7 @@ export function TradeHistory(): JSX.Element {
   const [resultFilter, setResultFilter] = useState<ResultFilter>('all');
   const [botFilter, setBotFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +92,11 @@ export function TradeHistory(): JSX.Element {
       return matchesResult && matchesBot && matchesSearch;
     });
   }, [botFilter, resultFilter, rows, search]);
+  const paginatedRows = useMemo(() => paginateRows(visibleRows, page), [page, visibleRows]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [days, resultFilter, botFilter, search]);
 
   const total = Number(summary?.pnl.total ?? 0);
   const wins = Number(summary?.pnl.wins ?? 0);
@@ -161,7 +168,7 @@ export function TradeHistory(): JSX.Element {
           </section>
 
           <section className="trade-history-panel trade-history-table-panel">
-            <div className="trade-history-panel-heading"><div><h2>Closed trades</h2><p>All recorded trades in the selected range</p></div><span>{visibleRows.length} shown</span></div>
+            <div className="trade-history-panel-heading"><div><h2>Closed trades</h2><p>All recorded trades in the selected range</p></div><span>{visibleRows.length} matching</span></div>
             <div className="trade-history-toolbar">
               <div className="trade-history-filter-tabs" role="group" aria-label="Filter trade results">
                 {([
@@ -186,7 +193,7 @@ export function TradeHistory(): JSX.Element {
                 <table className="trade-history-table">
                   <thead><tr><th>Closed</th><th>Symbol</th><th>Side</th><th>Volume</th><th>Entry</th><th>Close</th><th>Realized P/L</th><th>Bot</th><th>Result</th><th /></tr></thead>
                   <tbody>
-                    {visibleRows.map((row) => {
+                    {paginatedRows.rows.map((row) => {
                       const pnl = Number(row.realized_pl ?? 0);
                       const result = row.realized_pl === null ? 'Unavailable' : pnl > 0 ? 'Profit' : pnl < 0 ? 'Loss' : 'Break-even';
                       const credits = row.credit_events.reduce((sum, event) => sum + event.delta, 0);
@@ -205,6 +212,33 @@ export function TradeHistory(): JSX.Element {
                   </tbody>
                 </table>
               </div>
+            )}
+            {visibleRows.length > 0 && (
+              <nav className="trade-history-pagination" aria-label="Trade history pages">
+                <span aria-live="polite">
+                  Showing {paginatedRows.start}–{paginatedRows.end} of {visibleRows.length} matching trades.
+                  {' '}Performance totals above include all closed trades in the selected date range, not just this page.
+                </span>
+                <div>
+                  <button
+                    type="button"
+                    aria-label="Previous trade history page"
+                    onClick={() => setPage(paginatedRows.page - 1)}
+                    disabled={paginatedRows.page === 1}
+                  >
+                    Previous
+                  </button>
+                  <span>Page {paginatedRows.page} of {paginatedRows.totalPages}</span>
+                  <button
+                    type="button"
+                    aria-label="Next trade history page"
+                    onClick={() => setPage(paginatedRows.page + 1)}
+                    disabled={paginatedRows.page === paginatedRows.totalPages}
+                  >
+                    Next
+                  </button>
+                </div>
+              </nav>
             )}
           </section>
           <p className="trade-history-data-note">P/L values are reported by your broker and aggregated as stored. Currency conversion is not applied.</p>

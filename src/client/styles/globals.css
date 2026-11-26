@@ -1673,6 +1673,12 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .trade-history-table td { height: 40px; padding: 4px 7px; border-bottom: 1px solid #1b2530; color: #c2ccd6; font-size: 8px; }
 .trade-history-table tbody tr:last-child td { border-bottom: 0; }
 .trade-history-table tbody tr:hover { background: rgba(255,255,255,.025); }
+.trade-history-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 7px; border-top: 1px solid #202b36; color: #8c99a7; font-size: 8px; }
+.trade-history-pagination > div { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+.trade-history-pagination button { min-height: 28px; padding: 0 10px; border: 1px solid #344250; border-radius: 5px; background: #121b25; color: #dce3e9; font-size: 8px; }
+.trade-history-pagination button:not(:disabled):hover { border-color: #d6aa32; color: #f2cd63; }
+.trade-history-pagination button:disabled { opacity: .45; cursor: not-allowed; }
+.trade-history-pagination > span { line-height: 1.5; }
 .trade-history-table td:nth-child(2) { min-width: 105px; }
 .trade-history-table td:nth-child(2) strong, .trade-history-table td:nth-child(2) small { display: block; }
 .trade-history-symbol { color: #edf1f5; font-size: 8px; }
@@ -1720,6 +1726,8 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   .trade-history-bot-filter { max-width: 112px; }
   .trade-history-table th { padding: 0 6px; }
   .trade-history-table td { padding: 4px 6px; }
+  .trade-history-pagination { align-items: flex-start; flex-direction: column; }
+  .trade-history-pagination > div { width: 100%; justify-content: space-between; }
 }
 
 /* Wallet and broker connection */
