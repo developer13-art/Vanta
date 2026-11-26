@@ -17,7 +17,11 @@ historyRouter.post('/sync', requireAuth, async (req, res, next) => {
 historyRouter.get('/', requireAuth, async (req, res, next) => {
   try {
     const { brokerAccountId, botId, from, to } = req.query as Record<string, string | undefined>;
-    const conditions: string[] = ['b.user_id = $1', 'p.closed_at IS NOT NULL'];
+    const conditions: string[] = [
+      'b.user_id = $1',
+      'p.closed_at IS NOT NULL',
+      "(p.source = 'platform' OR p.opening_order_id IS NOT NULL)",
+    ];
     const params: unknown[] = [req.userId];
 
     if (brokerAccountId) { params.push(brokerAccountId); conditions.push(`p.broker_account_id = $${params.length}`); }
@@ -80,7 +84,8 @@ historyRouter.get('/:id', requireAuth, async (req, res, next) => {
          JOIN strategy_versions sv ON sv.id = b.strategy_version_id
          JOIN broker_symbols s ON s.id = p.broker_symbol_id
          JOIN broker_accounts ba ON ba.id = p.broker_account_id
-        WHERE p.id = $1 AND b.user_id = $2`,
+        WHERE p.id = $1 AND b.user_id = $2
+          AND (p.source = 'platform' OR p.opening_order_id IS NOT NULL)`,
       [req.params.id, req.userId],
     );
     if (!posRes.rows[0]) throw Errors.notFound();
@@ -132,6 +137,7 @@ historyRouter.get('/export/csv', requireAuth, async (req, res, next) => {
          JOIN broker_symbols s ON s.id = p.broker_symbol_id
          JOIN broker_accounts ba ON ba.id = p.broker_account_id
         WHERE b.user_id = $1 AND p.closed_at IS NOT NULL
+          AND (p.source = 'platform' OR p.opening_order_id IS NOT NULL)
         ORDER BY p.closed_at DESC`,
       [req.userId],
     );

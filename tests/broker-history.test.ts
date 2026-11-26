@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
@@ -18,10 +18,18 @@ vi.mock('../src/server/logger', () => ({
 import { aggregateClosedFxApisTrades, syncFxApisTradeHistory } from '../src/server/broker-history';
 import type { FxApiDeal } from '../src/server/fxapis';
 
+beforeEach(() => {
+  mocks.query.mockReset();
+  mocks.getAccountDeals.mockReset();
+  mocks.getOpenPositions.mockReset();
+});
+
 function deal(overrides: Partial<FxApiDeal>): FxApiDeal {
   return {
     brokerDealId: 'deal',
+    orderId: null,
     brokerPositionId: 'position-1',
+    comment: null,
     symbol: 'EURUSD',
     dealType: 'buy',
     entry: 'in',
@@ -37,23 +45,60 @@ function deal(overrides: Partial<FxApiDeal>): FxApiDeal {
 }
 
 describe('FXAPIs closed trade aggregation', () => {
+  it('does not assign unrelated broker trades to an arbitrary bot', async () => {
+    mocks.query
+      .mockResolvedValueOnce({ rows: [{ id: 'account-manual' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'account-manual', provider_account_id: 'fx-account-manual' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: 'symbol-1', broker_symbol: 'EURUSD' }] });
+    mocks.getOpenPositions.mockResolvedValue([]);
+    mocks.getAccountDeals.mockResolvedValue({
+      deals: [
+        deal({ brokerDealId: 'manual-entry', brokerPositionId: 'manual-position' }),
+        deal({
+          brokerDealId: 'manual-exit',
+          brokerPositionId: 'manual-position',
+          dealType: 'sell',
+          entry: 'out',
+          profit: 2,
+          dealtAt: '2026-01-01T10:01:00Z',
+        }),
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    await expect(syncFxApisTradeHistory('user-1')).resolves.toEqual({
+      imported: 0,
+      failedAccounts: 0,
+    });
+    expect(mocks.query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO positions'))).toBe(false);
+  });
+
   it('imports closed broker history across cursor pages', async () => {
     mocks.query
       .mockResolvedValueOnce({ rows: [{ id: 'account-1' }] })
       .mockResolvedValueOnce({ rows: [{ id: 'account-1', provider_account_id: 'fx-account-1' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'bot-1' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [
+        { id: 'opening-order', provider_order_id: 'fx-order-open', broker_ticket: 'position-1', bot_id: 'bot-1' },
+        { id: 'closing-order', provider_order_id: 'fx-order-close', broker_ticket: 'position-1', bot_id: 'bot-1' },
+      ] })
       .mockResolvedValueOnce({ rows: [{ id: 'symbol-1', broker_symbol: 'EURUSD' }] })
       .mockResolvedValueOnce({ rows: [] });
     mocks.getOpenPositions.mockResolvedValue([]);
     mocks.getAccountDeals
       .mockResolvedValueOnce({
-        deals: [deal({ brokerDealId: 'entry-1' })],
+        deals: [deal({ brokerDealId: 'entry-1', brokerPositionId: null, orderId: 'fx-order-open' })],
         hasMore: true,
         nextCursor: 'cursor-2',
       })
       .mockResolvedValueOnce({
         deals: [deal({
           brokerDealId: 'exit-1',
+          brokerPositionId: null,
+          orderId: 'fx-order-close',
           dealType: 'sell',
           entry: 'out',
           price: 1.2,
@@ -71,9 +116,11 @@ describe('FXAPIs closed trade aggregation', () => {
 
     expect(mocks.getAccountDeals).toHaveBeenNthCalledWith(1, 'fx-account-1', undefined);
     expect(mocks.getAccountDeals).toHaveBeenNthCalledWith(2, 'fx-account-1', 'cursor-2');
-    const insertCall = mocks.query.mock.calls[4] as [string, unknown[]];
+    const insertCall = mocks.query.mock.calls[5] as [string, unknown[]];
     expect(insertCall[0]).toContain('ON CONFLICT (broker_account_id, broker_ticket) DO UPDATE');
     expect(insertCall[1]).toContain('position-1');
+    expect(insertCall[1]).toContain('bot-1');
+    expect(insertCall[1]).toContain('opening-order');
     expect(insertCall[1]).toContain(10);
   });
 
@@ -122,6 +169,8 @@ describe('FXAPIs closed trade aggregation', () => {
       realizedPl: 9.15,
       commission: -0.5,
       swap: -0.25,
+      orderIds: [],
+      openingOrderIds: [],
     }]);
   });
 
@@ -154,5 +203,34 @@ describe('FXAPIs closed trade aggregation', () => {
     ], new Set());
 
     expect(trades[0]?.realizedPl).toBeNull();
+  });
+
+  it('uses the VANTA order ticket when a broker deal omits its position ID', () => {
+    const trades = aggregateClosedFxApisTrades([
+      deal({
+        brokerDealId: 'entry',
+        brokerPositionId: null,
+        orderId: 'fx-entry',
+        comment: 'vanta:12345678-1234-1234-1234-123456789abc',
+      }),
+      deal({
+        brokerDealId: 'exit',
+        brokerPositionId: null,
+        orderId: 'fx-exit',
+        entry: 'out',
+        dealType: 'sell',
+        profit: 2,
+        dealtAt: '2026-01-01T10:01:00Z',
+      }),
+    ], new Set(), new Map([
+      ['fx-entry', 'position-from-order'],
+      ['fx-exit', 'position-from-order'],
+    ]));
+
+    expect(trades[0]).toMatchObject({
+      brokerTicket: 'position-from-order',
+      orderIds: ['fx-entry', '12345678-1234-1234-1234-123456789abc', 'fx-exit'],
+      openingOrderIds: ['fx-entry', '12345678-1234-1234-1234-123456789abc'],
+    });
   });
 });

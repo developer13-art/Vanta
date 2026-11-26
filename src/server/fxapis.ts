@@ -332,7 +332,9 @@ export async function getOpenPositions(accountId: string): Promise<Array<{
 
 export interface FxApiDeal {
   brokerDealId: string;
+  orderId: string | null;
   brokerPositionId: string | null;
+  comment: string | null;
   symbol: string | null;
   dealType: string;
   entry: string | null;
@@ -371,7 +373,9 @@ export async function getAccountDeals(accountId: string, cursor?: string): Promi
     }
     return {
       brokerDealId: row.brokerDealId,
+      orderId: typeof row.orderId === 'string' ? row.orderId : null,
       brokerPositionId: typeof row.brokerPositionId === 'string' ? row.brokerPositionId : null,
+      comment: typeof row.comment === 'string' ? row.comment : null,
       symbol: typeof row.symbol === 'string' ? row.symbol : null,
       dealType: row.dealType,
       entry: typeof row.entry === 'string' ? row.entry : null,

@@ -156,7 +156,9 @@ describe('FXAPIs integration', () => {
     state.fetch.mockResolvedValueOnce(response({
       data: [{
         brokerDealId: 'deal-1',
+        orderId: 'order-1',
         brokerPositionId: 'position-1',
+        comment: 'vanta:12345678-1234-1234-1234-123456789abc',
         symbol: 'EURUSD.a',
         dealType: 'buy',
         entry: 'in',
@@ -180,7 +182,9 @@ describe('FXAPIs integration', () => {
       nextCursor: 'next page',
       deals: [{
         brokerDealId: 'deal-1',
+        orderId: 'order-1',
         brokerPositionId: 'position-1',
+        comment: 'vanta:12345678-1234-1234-1234-123456789abc',
         volume: 0.1,
         price: 1.0845,
         commission: -0.25,

@@ -33,6 +33,7 @@ analyticsRouter.get('/summary', requireAuth, async (req, res, next) => {
        FROM positions p
        JOIN bots b ON b.id = p.bot_id
       WHERE b.user_id = $${userParam} AND p.closed_at IS NOT NULL
+        AND (p.source = 'platform' OR p.opening_order_id IS NOT NULL)
         ${dateFilter}`,
       params,
     );
@@ -62,6 +63,7 @@ analyticsRouter.get('/daily-pnl', requireAuth, async (req, res, next) => {
               count(*)::int AS trades
          FROM positions p JOIN bots b ON b.id = p.bot_id
         WHERE b.user_id = $${userParam} AND p.closed_at IS NOT NULL
+          AND (p.source = 'platform' OR p.opening_order_id IS NOT NULL)
           ${dateFilter}
         GROUP BY 1 ORDER BY 1`,
       params,
